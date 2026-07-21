@@ -62,7 +62,7 @@ args = "bash start.sh"
 [deployment]
 deploymentTarget = "autoscale"
 run = ["bash", "start.sh"]
-build = ["bash", "-c", "npm run build && rm -rf .puppeteer_cache/chrome-headless-shell && PUPPETEER_CACHE_DIR=.puppeteer_cache npx puppeteer browsers install chrome-headless-shell"]
+build = ["bash", "-c", "npm run build && rm -f proxy_cache.json uptime_stats.json && rm -rf .puppeteer_cache/chrome-headless-shell && PUPPETEER_CACHE_DIR=.puppeteer_cache npx puppeteer browsers install chrome-headless-shell"]
 
 [[ports]]
 localPort = 3000

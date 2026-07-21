@@ -26,5 +26,9 @@ Thumbs.db
 # Lock files (Currently ignored, but can be removed if strictly wanted)
 package-lock.json
 
+# Runtime cache files — dibuat ulang otomatis saat bot jalan
+proxy_cache.json
+uptime_stats.json
+
 # Puppeteer browser cache — JANGAN diabaikan, harus ada di deployment container
 # .puppeteer_cache/
