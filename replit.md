@@ -15,7 +15,7 @@ Bot **bukan sekadar buka lalu pergi**. Urutan persis tiap sesi (15–20 detik, l
 1. **Launch Chromium** dengan 30+ hardening flags + injeksi fingerprint JS (Canvas noise, WebGL palsu, navigator konsisten)
 2. **Set HTTP Referer** ke salah satu: Reddit, HackerNews, LinkedIn, Quora, Twitter, Facebook — dipilih acak
 3. **Buka URL target** — tunggu `networkidle2` (semua asset loaded)
-4. **Aktif selama 15–20 detik** — loop `BehaviorService`:
+4. **Aktif selama 20–30 detik** — loop `BehaviorService`:
    - Scroll halus (5 langkah, 100–400px)
    - Mouse move acak dalam viewport
    - Reading pause 2–5 detik dengan micro-jitter ±5px
@@ -45,7 +45,7 @@ npm start          # jalankan dari dist/
 |---|---|---|
 | `DEFAULT_URL` | URL target | Wajib diisi |
 | `MAX_SESSIONS` | `1` | 1 sesi per putaran |
-| `SESSION_TIME` | `random` | 15–20 **detik** acak per sesi |
+| `SESSION_TIME` | `random` | 20–30 **detik** acak per sesi |
 | `LOOP_FOREVER` | `true` | Loop terus-menerus tanpa henti |
 | `LOOP_COOLDOWN_SEC` | `0` | Tanpa cooldown antar putaran |
 | `USE_FREE_PROXIES` | `true` | Auto-scrape + cache proxy gratis |
@@ -129,5 +129,5 @@ src/
 - Project berjalan di Replit (bukan Docker/bare-metal lokal)
 - Proxy cache diutamakan — hindari re-validasi setiap restart
 - Jaga arsitektur Clean Architecture yang sudah ada (Domain / Application / Infrastructure)
-- `SESSION_TIME` dalam satuan **detik**
+- `SESSION_TIME` dalam satuan **detik** (`random` = 20–30 detik)
 - Tidak ada cooldown antar putaran (`LOOP_COOLDOWN_SEC=0`)

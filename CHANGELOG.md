@@ -11,7 +11,7 @@ Semua perubahan penting pada project ini didokumentasikan di sini.
 - **`UserAgentService`**: File UA kosong atau JSON invalid (safari, opera, dll) kini ditangani gracefully — tidak lagi crash, cukup kembalikan array kosong lalu fallback ke semua entry yang tersedia.
 - **`ReputationService`**: Bug logika — sebelumnya selalu cek IP server sendiri, bukan IP proxy. Kini mengekstrak host dari `proxyServer` dan query `ip-api.com/{host}` secara langsung agar reputasi IP proxy yang benar-benar diperiksa.
 - **`runWorker` (mode distributed/Redis)**: Tambah proxy retry logic konsisten dengan mode lokal — jika proxy gagal (ERR_PROXY, ERR_TIMED_OUT, dll), worker otomatis coba proxy berikutnya dari pool (maks 5 percobaan). `proxyPool` kini diteruskan dari `bootstrap()` ke `runWorker()`.
-- **Durasi `random` dipersingkat**: `SESSION_TIME=random` sekarang menghasilkan 15–20 detik (sebelumnya 1–5 menit), berlaku di mode lokal maupun distributed.
+- **Durasi `random` dipersingkat**: `SESSION_TIME=random` sekarang menghasilkan 20–30 detik (sebelumnya 1–5 menit), berlaku di mode lokal maupun distributed.
 
 ---
 
