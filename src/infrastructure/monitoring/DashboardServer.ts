@@ -96,6 +96,13 @@ body{background:var(--bg);color:var(--text);font-family:'Courier New',monospace;
   <div class="card"><div class="clbl">Proxy Retry</div><div class="cval warn" id="cRetry">0</div><div class="csub">total retry proxy gagal</div></div>
 </div>
 
+<div class="cards" style="padding-top:0">
+  <div class="card"><div class="clbl">Pertama Aktif</div><div class="cval" id="cFirst" style="font-size:13px;line-height:1.3">—</div><div class="csub" id="cFirstSub"></div></div>
+  <div class="card"><div class="clbl">Total Online</div><div class="cval" id="cTotalUp">—</div><div class="csub">sejak pertama jalan</div></div>
+  <div class="card"><div class="clbl">Sesi Ini</div><div class="cval" id="cSessUp">—</div><div class="csub">sejak restart terakhir</div></div>
+  <div class="card"><div class="clbl">Restart</div><div class="cval warn" id="cRestart">0</div><div class="csub">kali direstart</div></div>
+</div>
+
 <div class="act">
   <div class="sec-title">
     <span>&#9679; Aktivitas Real-time</span>
@@ -160,6 +167,14 @@ function updateUI(s){
   document.getElementById('cRateSub').textContent = s.successSessions+' sukses / '+s.failedSessions+' gagal';
   document.getElementById('cPool').textContent = s.proxyPoolSize>0 ? s.proxyPoolSize : '—';
   document.getElementById('cRetry').textContent = s.proxyRetries;
+  // Persistent uptime cards
+  document.getElementById('cRestart').textContent = s.restartCount;
+  if(s.firstStartAt>0){
+    var fd=new Date(s.firstStartAt);
+    var days=['Min','Sen','Sel','Rab','Kam','Jum','Sab'];
+    document.getElementById('cFirst').textContent = days[fd.getDay()]+', '+fd.getDate()+' '+['Jan','Feb','Mar','Apr','Mei','Jun','Jul','Agu','Sep','Okt','Nov','Des'][fd.getMonth()]+' '+fd.getFullYear();
+    document.getElementById('cFirstSub').textContent = (fd.getHours()<10?'0':'')+fd.getHours()+':'+(fd.getMinutes()<10?'0':'')+fd.getMinutes()+':'+(fd.getSeconds()<10?'0':'')+fd.getSeconds();
+  }
   // Status badge
   var statusMap = {starting:'STARTING',loading_proxies:'LOAD PROXY',running:'RUNNING',cooldown:'COOLDOWN',done:'DONE',error:'ERROR'};
   var bSt = document.getElementById('bStatus');
@@ -200,6 +215,33 @@ function renderLog(entries){
   lb.innerHTML = html;
   if(autoScroll) lb.scrollTop = 0;
 }
+
+// Total online + sesi ini counters (1s tick)
+// S.uptime = detik sejak process start terakhir (dikirim tiap SSE event)
+// Kita catat kapan snapshot S diterima, lalu tambahkan elapsed time agar counter terus berjalan
+var lastUptimeSnap = 0;   // nilai S.uptime terakhir yang diterima
+var lastUptimeAt   = 0;   // timestamp (ms) saat snapshot diterima
+setInterval(function(){
+  if(!S) return;
+  // Total online — hitung dari firstStartAt
+  if(S.firstStartAt>0){
+    var totalSec=Math.floor((Date.now()-S.firstStartAt)/1000);
+    document.getElementById('cTotalUp').textContent=fmtUptime(totalSec);
+  }
+  // Sesi ini — interpolasi dari snapshot terakhir
+  if(lastUptimeAt>0){
+    var elapsed=Math.floor((Date.now()-lastUptimeAt)/1000);
+    document.getElementById('cSessUp').textContent=fmtUptime(lastUptimeSnap+elapsed);
+  }
+}, 1000);
+
+// Tangkap snapshot uptime setiap SSE event masuk
+var _origUpdateUI=updateUI;
+updateUI=function(s){
+  _origUpdateUI(s);
+  lastUptimeSnap=s.uptime;
+  lastUptimeAt=Date.now();
+};
 
 // Step progress timer (100ms tick)
 setInterval(function(){

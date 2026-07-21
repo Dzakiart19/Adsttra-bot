@@ -20,6 +20,8 @@ Chromium headless diluncurkan dengan 30+ hardening flags. Sebelum halaman pertam
 Sebelum buka URL target, bot set `Referer` header ke salah satu dari:
 `Reddit`, `HackerNews`, `LinkedIn`, `Quora`, `Twitter/X`, `Facebook` — dipilih acak.
 
+Pool referrer default mencakup: `Facebook`, `Instagram`, `X / Twitter`, `TikTok`, `YouTube`, `Pinterest`, `LinkedIn`, `Reddit`, `HackerNews`, `Quora`, `WhatsApp Web`, `Telegram`.
+
 **Efek**: Di Google Analytics / server log target, kunjungan terlihat *datang dari* platform tersebut. Bukan direct traffic.
 
 ### 3. Buka URL Target
@@ -50,7 +52,7 @@ Link dipilih secara **weighted-random** → `window.location.href = link.href`
 
 ### 6. Close Browser
 
-**Dari perspektif Google Analytics target**: ada kunjungan dari Reddit/HackerNews, scroll-scroll, baca beberapa detik, klik ke halaman product, lalu pergi. Terlihat organik.
+**Dari perspektif Google Analytics target**: ada kunjungan dari Facebook/Instagram/X/TikTok/dll, scroll-scroll, baca beberapa detik, klik ke halaman product, lalu pergi. Terlihat organik.
 
 ---
 

@@ -9,6 +9,7 @@ import { ProxyService } from './infrastructure/proxy/ProxyService';
 import { StateService } from './infrastructure/monitoring/StateService';
 import { startDashboard } from './infrastructure/monitoring/DashboardServer';
 import { ReputationService } from './infrastructure/monitoring/ReputationService';
+import { UptimeService } from './infrastructure/monitoring/UptimeService';
 import { Job } from 'bullmq';
 
 async function setupMonitoring() {
@@ -100,6 +101,13 @@ async function runWorker(proxyPool?: ProxyService) {
 }
 
 async function bootstrap() {
+  // ── Persistent uptime tracker (baca/tulis uptime_stats.json) ───────────────
+  const uptimeStats = UptimeService.init();
+  StateService.update({
+    firstStartAt: uptimeStats.firstStartAt,
+    restartCount: uptimeStats.restartCount,
+  });
+
   // ── Start dashboard HTTP server ─────────────────────────────────────────────
   startDashboard();
 

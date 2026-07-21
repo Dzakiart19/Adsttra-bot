@@ -13,7 +13,7 @@ Enterprise-grade stealth traffic generation framework. Mensimulasikan kunjungan 
 Bot **bukan sekadar buka lalu pergi**. Urutan persis tiap sesi (15–20 detik, lalu langsung ulang):
 
 1. **Launch Chromium** dengan 30+ hardening flags + injeksi fingerprint JS (Canvas noise, WebGL palsu, navigator konsisten)
-2. **Set HTTP Referer** ke salah satu: Reddit, HackerNews, LinkedIn, Quora, Twitter, Facebook — dipilih acak
+2. **Set HTTP Referer** ke salah satu: Facebook, Instagram, X/Twitter, TikTok, YouTube, Pinterest, LinkedIn, Reddit, HackerNews, Quora, WhatsApp Web, Telegram — dipilih acak
 3. **Buka URL target** — tunggu `networkidle2` (semua asset loaded)
 4. **Aktif selama 20–30 detik** — loop `BehaviorService`:
    - Scroll halus (5 langkah, 100–400px)

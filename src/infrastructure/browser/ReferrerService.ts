@@ -2,12 +2,24 @@ import { Logger } from 'winston';
 
 export class ReferrerService {
   private static readonly DEFAULT_REFERRERS = [
-    'https://t.co/',
+    // Social media (web version — kirim Referer secara normal)
     'https://www.facebook.com/',
+    'https://www.instagram.com/',
+    'https://x.com/',
+    'https://twitter.com/',
+    'https://t.co/',                        // Twitter link shortener
+    'https://www.tiktok.com/',
+    'https://www.youtube.com/',
+    'https://www.pinterest.com/',
     'https://www.linkedin.com/',
+    // Community / forum
     'https://www.reddit.com/',
     'https://news.ycombinator.com/',
     'https://www.quora.com/',
+    // Messaging (app-based — spoofed; analytics mungkin catat sebagai referral)
+    'https://web.whatsapp.com/',
+    'https://t.me/',
+    'https://web.telegram.org/',
   ];
 
   private static readonly SEARCH_ENGINES = [

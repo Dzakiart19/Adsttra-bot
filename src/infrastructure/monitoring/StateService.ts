@@ -10,6 +10,10 @@ export interface LiveState {
   status: 'starting' | 'loading_proxies' | 'running' | 'cooldown' | 'done' | 'error';
   uptime: number;
 
+  // Persistent uptime (survive restart)
+  firstStartAt: number;   // timestamp ms pertama kali bot pernah jalan
+  restartCount: number;   // berapa kali bot direstart
+
   round: number;
   cooldownEndsAt: number;
 
@@ -44,6 +48,8 @@ class StateServiceSingleton extends EventEmitter {
   private _state: LiveState = {
     status: 'starting',
     uptime: 0,
+    firstStartAt: 0,
+    restartCount: 0,
     round: 0,
     cooldownEndsAt: 0,
     sessionIndex: 0,
