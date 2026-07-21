@@ -26,15 +26,10 @@ export class TrafficOrchestrator {
       const metrics = MetricsService.getInstance();
       metrics.trackSessionStart();
 
-      // Reputation check async (non-blocking)
-      ReputationService.checkIP(config.proxy?.server)
-        .then(details => {
-          if (details) {
-            const burnt = details.hosting || details.proxy || details.vpn;
-            StateService.update({ proxyBurnt: burnt });
-          }
-        })
-        .catch(() => {});
+      // Catatan: reputation check TIDAK dilakukan di sini — sudah dilakukan di main.ts
+      // sebelum TrafficOrchestrator dipanggil (skip proxy burnt sebelum buka browser).
+      // Melakukan checkIP() lagi di sini hanya membuang kuota ip-api.com (45 req/min)
+      // dan berpotensi race condition dengan state yang baru saja di-set main.ts.
 
       const { ReferrerService } = require('../../infrastructure/browser/ReferrerService');
       const referrerService = new ReferrerService(logger);
@@ -222,12 +217,18 @@ export class TrafficOrchestrator {
       }
 
       // 4. Dwell time di URL target
+      // Kurangi waktu yang sudah terpakai (browser init + navigate + warmup) dari durationMs
+      // agar total sesi tidak melebihi yang dikonfigurasi.
+      // Minimum dwell 1 detik agar kontekstual klik tetap bisa dieksekusi.
+      const elapsedBeforeDwell = Date.now() - startTime;
+      const dwellMs = Math.max(1000, config.durationMs - elapsedBeforeDwell);
+
       // Jumlah step disesuaikan durasi: sesi pendek (< 60s) cukup 1 step
       // supaya timer dashboard mencerminkan durasi penuh di URL target.
-      const numSteps = config.durationMs < 60000 ? 1 : 4;
+      const numSteps = dwellMs < 60000 ? 1 : 4;
       const stayWeights = Array.from({ length: numSteps }, () => Math.random() + 0.5);
       const totalWeight = stayWeights.reduce((a, b) => a + b, 0);
-      const stayDurations = stayWeights.map(w => Math.floor((w / totalWeight) * config.durationMs));
+      const stayDurations = stayWeights.map(w => Math.floor((w / totalWeight) * dwellMs));
 
       logger.debug('Starting navigation loop', {
         numSteps, stayDurations, humanBehavior: Config.HUMAN_BEHAVIOR

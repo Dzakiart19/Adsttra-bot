@@ -29,6 +29,14 @@ export class UserAgentService {
     }
 
     const selected = filtered[Math.floor(Math.random() * filtered.length)];
+
+    // Guard: jika DB kosong (file UA tidak ada / JSON kosong), pakai fallback hardcoded
+    // agar tidak crash dengan TypeError: Cannot read properties of undefined ('ua')
+    if (!selected) {
+      const fallbackUA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Safari/537.36';
+      return { ua: this.randomizeVersion(fallbackUA), platform: 'win32' };
+    }
+
     const randomizedUA = this.randomizeVersion(selected.ua);
 
     return { 

@@ -12,7 +12,12 @@ export interface IPDetails {
 }
 
 export class ReputationService {
-  private static CACHE = new Map<string, IPDetails>();
+  private static CACHE = new Map<string, { data: IPDetails; cachedAt: number }>();
+
+  // Cache TTL: proxy bersih di-cache lebih lama (reputasi stabil),
+  // proxy burnt lebih singkat (mungkin dilepas dari datacenter/VPN pool).
+  private static TTL_CLEAN_MS  = 60 * 60 * 1000;  // 1 jam untuk IP bersih
+  private static TTL_BURNT_MS  = 15 * 60 * 1000;  // 15 menit untuk IP burnt
 
   /**
    * Checks the reputation of an IP address using ip-api.com
@@ -20,8 +25,15 @@ export class ReputationService {
    */
   public static async checkIP(proxyServer?: string): Promise<IPDetails | null> {
     const cacheKey = proxyServer || 'direct';
-    if (this.CACHE.has(cacheKey)) {
-      return this.CACHE.get(cacheKey)!;
+    const cached = this.CACHE.get(cacheKey);
+    if (cached) {
+      const isBurnt = cached.data.hosting || cached.data.proxy || cached.data.vpn;
+      const ttl = isBurnt ? this.TTL_BURNT_MS : this.TTL_CLEAN_MS;
+      if (Date.now() - cached.cachedAt < ttl) {
+        return cached.data;
+      }
+      // TTL expired — hapus dan fetch ulang
+      this.CACHE.delete(cacheKey);
     }
 
     try {
@@ -56,7 +68,7 @@ export class ReputationService {
         vpn: data.vpn || false,
       };
 
-      this.CACHE.set(cacheKey, details);
+      this.CACHE.set(cacheKey, { data: details, cachedAt: Date.now() });
       
       const isBurnt = details.hosting || details.proxy || details.vpn;
       if (isBurnt) {
@@ -71,6 +83,7 @@ export class ReputationService {
       }
 
       return details;
+
     } catch (error) {
       logger.error('Failed to perform IP reputation check', { error });
       return null;

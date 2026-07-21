@@ -16,6 +16,14 @@ function broadcast(state: LiveState): void {
 
 StateService.on('update', (state: LiveState) => broadcast(state));
 
+// SSE heartbeat setiap 30 detik — deteksi dan bersihkan client yang hang
+// (browser tab ditutup tanpa TCP FIN, koneksi hang tidak mengirim close event)
+setInterval(() => {
+  for (const res of clients) {
+    try { res.write(': ping\n\n'); } catch { clients.delete(res); }
+  }
+}, 30_000);
+
 // ── Embedded dashboard HTML ───────────────────────────────────────────────────
 const HTML = `<!DOCTYPE html>
 <html lang="id">
