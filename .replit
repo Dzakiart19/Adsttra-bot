@@ -16,7 +16,7 @@ DEFAULT_URL = "https://www.effectivecpmnetwork.com/dknrw1cb8?key=5fa604a5dd5abb7
 HEADLESS = "true"
 HUMAN_BEHAVIOR = "true"
 LOG_LEVEL = "info"
-MATCH_GEOLOCATION = "false"
+MATCH_GEOLOCATION = "true"
 MAX_SESSIONS = "5"
 NODE_ENV = "production"
 ORGANIC_SEARCH = "false"
