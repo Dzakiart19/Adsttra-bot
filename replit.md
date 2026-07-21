@@ -10,12 +10,12 @@ Enterprise-grade stealth traffic generation framework. Mensimulasikan kunjungan 
 
 ## Yang Sebenarnya Dilakukan Bot Saat Buka URL Target
 
-Bot **bukan sekadar buka lalu pergi**. Urutan persis tiap sesi (15–20 detik, lalu langsung ulang):
+Bot **bukan sekadar buka lalu pergi**. Urutan persis tiap sesi (30–45 detik, lalu langsung ulang):
 
 1. **Launch Chromium** dengan 30+ hardening flags + injeksi fingerprint JS (Canvas noise, WebGL palsu, navigator konsisten)
 2. **Set HTTP Referer** ke salah satu: Facebook, Instagram, X/Twitter, TikTok, YouTube, Pinterest, LinkedIn, Reddit, HackerNews, Quora, WhatsApp Web, Telegram — dipilih acak
 3. **Buka URL target** — tunggu `networkidle2` (semua asset loaded)
-4. **Aktif selama 20–30 detik** — loop `BehaviorService`:
+4. **Aktif selama 30–45 detik** — loop `BehaviorService`:
    - Scroll halus (5 langkah, 100–400px)
    - Mouse move acak dalam viewport
    - Reading pause 2–5 detik dengan micro-jitter ±5px
@@ -45,7 +45,7 @@ npm start          # jalankan dari dist/
 |---|---|---|
 | `DEFAULT_URL` | URL target | Wajib diisi |
 | `MAX_SESSIONS` | `1` | 1 sesi per putaran |
-| `SESSION_TIME` | `random` | 30–45 **detik** acak per sesi |
+| `SESSION_TIME` | `random` | 30–45 detik acak per sesi |
 | `MAX_SESSIONS` | `5` | 5 sesi browser paralel per putaran |
 | `LOOP_FOREVER` | `true` | Loop terus-menerus tanpa henti |
 | `LOOP_COOLDOWN_SEC` | `0` | Tanpa cooldown antar putaran |
@@ -119,7 +119,7 @@ src/
 - **`proxyPoolSize`** di dashboard di-update tiap awal putaran (bukan hanya saat startup)
 - **`⚠ burnt`** di dashboard = warning informatif, bukan error — bot tetap retry otomatis
 - **`ip-api.com`** free tier limit 45 req/menit — dipakai untuk geolocation + reputation check (general proxy validation)
-- **`SESSION_TIME`** dalam **detik** (bukan menit). `random` = 15–20 detik
+- **`SESSION_TIME`** dalam **detik** (bukan menit). `random` = 30–45 detik
 - **Sesi < 60 detik** otomatis pakai 1 step (bukan 4) agar timer dashboard menampilkan durasi penuh
 - **`HEADLESS=false`** tidak menampilkan UI browser di Replit (server tanpa display)
 
@@ -131,5 +131,5 @@ src/
 - Project berjalan di Replit (bukan Docker/bare-metal lokal)
 - Proxy cache diutamakan — hindari re-validasi setiap restart
 - Jaga arsitektur Clean Architecture yang sudah ada (Domain / Application / Infrastructure)
-- `SESSION_TIME` dalam satuan **detik** (`random` = 20–30 detik)
+- `SESSION_TIME` dalam satuan **detik** (`random` = 30–45 detik)
 - Tidak ada cooldown antar putaran (`LOOP_COOLDOWN_SEC=0`)

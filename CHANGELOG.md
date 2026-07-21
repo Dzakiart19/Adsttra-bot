@@ -4,6 +4,14 @@ Semua perubahan penting pada project ini didokumentasikan di sini.
 
 ---
 
+## [2.5.0] - 2026-07-22
+
+### Changed
+
+- **Dashboard Live Log — hanya tampilkan sesi sukses** (`DashboardServer`, `logger`): Bagian "Live Log" di dashboard diubah menjadi **"✓ Sesi Sukses"** — hanya mencatat sesi yang berhasil selesai. Sebelumnya semua event (info, warn, error) ditampilkan bercampur. Pesan `"Session completed successfully"` kini diberi level `success` di `DashboardTransport` sehingga bisa difilter secara akurat di frontend. Placeholder *"Menunggu sesi sukses pertama..."* ditampilkan saat log masih kosong.
+
+---
+
 ## [2.4.0] - 2026-07-22
 
 ### Added

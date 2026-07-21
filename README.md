@@ -27,7 +27,7 @@ Pool referrer default mencakup: `Facebook`, `Instagram`, `X / Twitter`, `TikTok`
 ### 3. Buka URL Target
 `page.goto(url, { waitUntil: 'networkidle2' })` — bot tunggu semua asset selesai dimuat sebelum lanjut.
 
-### 4. Diam di Halaman 20–30 Detik — Sambil Aktif
+### 4. Diam di Halaman 30–45 Detik — Sambil Aktif
 Selama durasi sesi, `BehaviorService` loop terus-menerus memilih aksi acak:
 
 | Aksi | Probabilitas (medium) | Detail |
@@ -104,7 +104,7 @@ Salin `.env.example` dan sesuaikan, atau set langsung di tab Secrets Replit.
 | ---------------------------- | -------------------------- | ----------------------------------------------------------------- |
 | `DEFAULT_URL`                | *(wajib diisi)*            | URL target utama                                                  |
 | `MAX_SESSIONS`               | `1`                        | Jumlah sesi browser per putaran                                   |
-| `SESSION_TIME`               | `random`                   | Durasi sesi dalam **detik** (integer) atau `random` = 20–30 detik acak |
+| `SESSION_TIME`               | `random`                   | Durasi sesi dalam **detik** (integer) atau `random` = 30–45 detik acak |
 | `LOOP_FOREVER`               | `true`                     | Loop terus-menerus tanpa henti                                    |
 | `LOOP_COOLDOWN_SEC`          | `0`                        | Jeda antar putaran (detik). `0` = tanpa cooldown, langsung ulang  |
 | `HEADLESS`                   | `true`                     | Jalankan browser tanpa UI                                         |
@@ -131,7 +131,7 @@ Salin `.env.example` dan sesuaikan, atau set langsung di tab Secrets Replit.
 | `LOG_LEVEL`                  | `info`                     | Level log: `error`, `warn`, `info`, `debug`                       |
 | `NODE_ENV`                   | `development`              | Environment: `development`, `production`, `test`                  |
 
-> **Catatan `SESSION_TIME`**: nilai integer = detik. `random` = 20–30 detik acak per sesi.
+> **Catatan `SESSION_TIME`**: nilai integer = detik. `random` = 30–45 detik acak per sesi.
 
 ---
 
@@ -169,9 +169,11 @@ PROXY_VALIDATE_CONCURRENCY=40
 
 **Sumber general** (11 sumber, semua negara, country di-detect saat validasi): proxyscrape all, monosans, clarketm, ShiftyTR, roosterkid, sunny9577, TheSpeedX, zevtyardt, ErcinDedeoglu, Anonym0usWork1221, proxifly.
 
-**Retry logic**: tiap sesi coba maks 3 proxy berbeda → fallback ke direct jika semua gagal.
+**Retry logic**: tiap sesi coba maks 5 proxy berbeda → sesi di-skip jika semua proxy burnt/gagal (tanpa fallback direct).
 
-**⚠ burnt warning**: jika proxy terdeteksi sebagai hosting/datacenter oleh ip-api.com, dashboard menampilkan `⚠ burnt`. Ini **hanya informasi** — bot tetap coba koneksi. Jika koneksi gagal, otomatis retry ke proxy berikutnya.
+**⚠ burnt warning**: jika proxy terdeteksi sebagai `hosting`, `vpn`, atau `proxy` oleh ip-api.com, proxy **di-skip tanpa membuka browser** — lebih efisien. Bot langsung coba proxy berikutnya dari pool.
+
+**Target-site block detection**: setelah navigasi, bot membaca body text halaman. Jika target site menampilkan halaman blokir (`"Anonymous Proxy detected."`, `"Access denied"`, dll), bot segera retry ke proxy berikutnya tanpa membuang durasi sesi penuh.
 
 ### 2. Proxy Statis
 
