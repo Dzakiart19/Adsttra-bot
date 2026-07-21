@@ -14,10 +14,11 @@ const consoleTransport = new transports.Console({
 // ── Dashboard transport: feed log ke StateService SSE ─────────────────────────
 class DashboardTransport extends Transport {
   log(info: any, callback: () => void): void {
+    const msg = typeof info.message === 'string' ? info.message : JSON.stringify(info.message);
     const level: 'info' | 'warn' | 'error' | 'success' =
       info.level === 'error' ? 'error' :
-      info.level === 'warn'  ? 'warn'  : 'info';
-    const msg = typeof info.message === 'string' ? info.message : JSON.stringify(info.message);
+      info.level === 'warn'  ? 'warn'  :
+      msg === 'Session completed successfully' ? 'success' : 'info';
     try { StateService.addLog(level, msg); } catch { /* jangan crash logger */ }
     callback();
   }

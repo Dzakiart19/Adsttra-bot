@@ -131,7 +131,7 @@ body{background:var(--bg);color:var(--text);font-family:'Courier New',monospace;
 </div>
 
 <div class="log-wrap">
-  <div class="log-hdr"><span>Live Log</span><span id="logCnt">0 events</span></div>
+  <div class="log-hdr"><span>&#10003; Sesi Sukses</span><span id="logCnt">0 sesi</span></div>
   <div class="log-body" id="logBody"></div>
 </div>
 
@@ -220,14 +220,14 @@ function updateUI(s){
 }
 
 function renderLog(entries){
-  document.getElementById('logCnt').textContent = entries.length+' events';
+  var ok = entries.filter(function(e){ return e.level==='success'; });
+  document.getElementById('logCnt').textContent = ok.length+' sesi';
   var html = '';
-  for(var i=0;i<entries.length;i++){
-    var e=entries[i];
-    var cls=e.level==='error'?'error':e.level==='warn'?'warn':e.level==='success'?'success':'';
-    html += '<div class="le '+cls+'"><span class="ts">'+fmtTs(e.ts)+'</span>'+escH(e.msg)+'</div>';
+  for(var i=0;i<ok.length;i++){
+    var e=ok[i];
+    html += '<div class="le success"><span class="ts">'+fmtTs(e.ts)+'</span>'+escH(e.msg)+'</div>';
   }
-  lb.innerHTML = html;
+  lb.innerHTML = html || '<div style="padding:16px 12px;color:var(--dim);font-size:10px">Menunggu sesi sukses pertama...</div>';
   if(autoScroll) lb.scrollTop = 0;
 }
 
