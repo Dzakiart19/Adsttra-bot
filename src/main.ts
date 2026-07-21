@@ -25,7 +25,7 @@ async function runProducer(proxyPool?: ProxyService) {
 
   for (let i = 0; i < Config.MAX_SESSIONS; i++) {
     const durationSec = Config.SESSION_TIME === 'random'
-      ? (Math.floor(Math.random() * 31) + 30)  // 30–60 detik (cukup untuk ad viewable)
+      ? (Math.floor(Math.random() * 11) + 20)  // 20–30 detik
       : parseInt(Config.SESSION_TIME);
     const durationMin = durationSec / 60;       // QueueService memakai menit
 
@@ -157,7 +157,7 @@ async function bootstrap() {
 
           for (let i = 0; i < Config.MAX_SESSIONS; i++) {
             const durationMs = Config.SESSION_TIME === 'random'
-              ? (Math.floor(Math.random() * 31) + 30) * 1000  // 30–60 detik (cukup untuk ad viewable)
+              ? (Math.floor(Math.random() * 11) + 20) * 1000  // 20–30 detik
               : parseInt(Config.SESSION_TIME) * 1000;          // SESSION_TIME dalam detik
 
             // Coba dengan proxy (maks 5 proxy berbeda), lalu fallback direct
