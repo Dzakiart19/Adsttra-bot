@@ -145,7 +145,35 @@ export class TrafficOrchestrator {
         await this.engine.navigate(config.url);
       }
 
-      // 3. Dwell time di URL target
+      // 3. Ad Warm-up: tunggu script iklan benar-benar initialize
+      //
+      // KRITIS untuk impression count: Adsterra & ad network lain menggunakan
+      // pola deferred initialization — script mereka baru fire impression call
+      // setelah 2-6 detik via setTimeout() atau IntersectionObserver.
+      // Tanpa ini, bot sudah lanjut tapi impression XHR belum dikirim.
+      //
+      // Juga scroll untuk trigger below-fold ads yang pakai IntersectionObserver:
+      // ad hanya di-fetch dan dicatat saat masuk viewport pertama kali.
+      {
+        const warmupMs = Math.floor(Math.random() * 3000) + 5000; // 5–8 detik
+        StateService.update({ action: `Ad warm-up: menunggu script iklan init (${(warmupMs/1000).toFixed(1)}s)...` });
+        logger.debug(`Ad warm-up: ${warmupMs}ms`);
+        await this.engine.wait(warmupMs);
+
+        // Scroll bertahap untuk trigger IntersectionObserver (above + below fold)
+        try {
+          await this.engine.scroll(0, 200);
+          await this.engine.wait(700);
+          await this.engine.scroll(0, 300);
+          await this.engine.wait(800);
+          await this.engine.scroll(0, 250);
+          await this.engine.wait(600);
+          await this.engine.scroll(0, -200); // kembali ke atas sedikit
+          await this.engine.wait(500);
+        } catch { /* scroll gagal (non-scrollable page), abaikan */ }
+      }
+
+      // 4. Dwell time di URL target
       // Jumlah step disesuaikan durasi: sesi pendek (< 60s) cukup 1 step
       // supaya timer dashboard mencerminkan durasi penuh di URL target.
       const numSteps = config.durationMs < 60000 ? 1 : 4;
@@ -206,6 +234,12 @@ export class TrafficOrchestrator {
       });
       throw error; // re-throw agar main.ts bisa trigger proxy retry
     } finally {
+      // Grace period: beri waktu 2–3 detik agar XHR/beacon impression iklan
+      // yang masih in-flight selesai dikirim sebelum browser ditutup.
+      // Tanpa ini, browser close membunuh request yang belum sampai ke server.
+      try {
+        await new Promise(resolve => setTimeout(resolve, Math.floor(Math.random() * 1000) + 2000));
+      } catch { /* abaikan */ }
       await this.engine.close();
     }
   }
