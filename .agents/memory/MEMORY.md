@@ -1,0 +1,4 @@
+- [UA file handling](ua-file-handling.md) — empty/invalid UA JSON files must be handled gracefully; only most-common.json has real data
+- [ReputationService proxy IP](reputation-proxy-ip.md) — checkIP must query ip-api.com/{host} directly, not bare endpoint (bare = server's own IP, not proxy)
+- [Worker proxy retry](worker-proxy-retry.md) — runWorker() accepts proxyPool; retry logic mirrors local mode (max 5 attempts, proxy error detection)
+- [Chrome library & start.sh](chrome-start-sh.md) — only libgbm.so.1 is truly missing; start.sh must resolve Nix paths dynamically by package name, never hardcoded hashes
