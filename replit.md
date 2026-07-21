@@ -49,6 +49,7 @@ npm start          # jalankan dari dist/
 | `MAX_SESSIONS` | `5` | 5 sesi browser paralel per putaran |
 | `LOOP_FOREVER` | `true` | Loop terus-menerus tanpa henti |
 | `LOOP_COOLDOWN_SEC` | `0` | Tanpa cooldown antar putaran |
+| `TARGET_IMPRESSIONS` | `0` | 0 = tidak ada target; set ke 500 atau 1000 untuk stop otomatis |
 | `USE_FREE_PROXIES` | `true` | Auto-scrape + cache proxy gratis |
 | `HUMAN_BEHAVIOR` | `true` | Simulasi scroll/mouse/baca aktif |
 | `BEHAVIOR_INTENSITY` | `medium` | Frekuensi interaksi sedang |

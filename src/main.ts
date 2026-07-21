@@ -59,9 +59,10 @@ async function runWorker(proxyPool?: ProxyService) {
 
         // ── Reputation pre-check: skip burnt proxy sebelum buka browser ──
         const rep = await ReputationService.checkIP(proxyStr);
-        if (rep && rep.vpn) {
-          StateService.update({ proxyRetries: StateService.getState().proxyRetries + 1, proxyBurnt: true, action: `⚠ Worker proxy VPN murni (${proxyStr}), skip...` });
-          logger.warn(`Worker: Proxy VPN murni — skip tanpa buka browser (${proxyStr})`);
+        if (rep && (rep.vpn || rep.hosting || rep.proxy)) {
+          const reason = rep.vpn ? 'VPN' : rep.hosting ? 'hosting/datacenter' : 'proxy terdeteksi';
+          StateService.update({ proxyRetries: StateService.getState().proxyRetries + 1, proxyBurnt: true, action: `⚠ Worker burnt (${reason}) ${proxyStr} — skip` });
+          logger.warn(`Worker: Proxy burnt (${reason}) — skip tanpa buka browser (${proxyStr})`);
           continue;
         }
 
@@ -111,7 +112,11 @@ async function bootstrap() {
   // ── Start dashboard HTTP server ─────────────────────────────────────────────
   startDashboard();
 
-  StateService.update({ status: 'starting', action: 'Initializing Veneno Traffic Bot v2...' });
+  StateService.update({
+    status: 'starting',
+    action: 'Initializing Veneno Traffic Bot v2...',
+    targetImpressions: Config.TARGET_IMPRESSIONS,
+  });
 
   logger.info('Initializing Veneno Traffic Bot v2 (Distributed)', {
     env: Config.NODE_ENV, role: Config.BOT_ROLE, redis: Config.REDIS_URL
@@ -203,9 +208,10 @@ async function bootstrap() {
                 action: `Cek reputasi proxy ${proxyStr}...`,
               });
               const rep = await ReputationService.checkIP(proxyStr);
-              if (rep && rep.vpn) {
-                StateService.update({ proxyBurnt: true, proxyRetries: StateService.getState().proxyRetries + 1, action: `⚠ Proxy VPN murni (${proxyStr}), skip → coba berikutnya...` });
-                logger.warn(`[R${round}·S${i+1}] Proxy VPN murni — skip tanpa buka browser (${proxyStr})`);
+              if (rep && (rep.vpn || rep.hosting || rep.proxy)) {
+                const reason = rep.vpn ? 'VPN' : rep.hosting ? 'hosting/datacenter' : 'proxy terdeteksi';
+                StateService.update({ proxyBurnt: true, proxyRetries: StateService.getState().proxyRetries + 1, action: `⚠ Burnt (${reason}) ${proxyStr} — skip` });
+                logger.warn(`[R${round}·S${i+1}] Proxy burnt (${reason}) — skip tanpa buka browser (${proxyStr})`);
                 continue;
               }
 
@@ -235,7 +241,16 @@ async function bootstrap() {
                 sessionSuccess = true;
                 consecutiveChromeFails = 0; // reset circuit breaker saat sesi berhasil
                 const st = StateService.getState();
-                StateService.update({ successSessions: st.successSessions + 1, totalSessions: st.totalSessions + 1, step: 0, action: `Sesi R${round}·S${i+1} berhasil ✓ (proxy)` });
+                const newSuccess = st.successSessions + 1;
+                StateService.update({ successSessions: newSuccess, totalSessions: st.totalSessions + 1, step: 0, action: `Sesi R${round}·S${i+1} berhasil ✓ (proxy)` });
+
+                // ── TARGET_IMPRESSIONS: berhenti otomatis jika target tercapai ──
+                if (Config.TARGET_IMPRESSIONS > 0 && newSuccess >= Config.TARGET_IMPRESSIONS) {
+                  logger.info(`🎯 TARGET ${Config.TARGET_IMPRESSIONS} impressions TERCAPAI! Bot berhenti.`);
+                  StateService.update({ status: 'done', action: `🎯 Target ${Config.TARGET_IMPRESSIONS} impressions tercapai — bot selesai!` });
+                  await new Promise(resolve => setTimeout(resolve, 2000)); // beri waktu dashboard update
+                  process.exit(0);
+                }
               } catch (err: any) {
                 const msg = err?.message ?? '';
 

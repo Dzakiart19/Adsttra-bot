@@ -33,6 +33,8 @@ const ConfigSchema = z.object({
   SEARCH_ENGINE: z.enum(['google', 'bing', 'duckduckgo', 'random']).default('google'),
   LOOP_FOREVER: z.preprocess((a) => a === 'true' || a === '1' || a === true, z.boolean()).default(false),
   LOOP_COOLDOWN_SEC: z.coerce.number().int().min(0).default(30),
+  // 0 = tidak ada target (loop sesuai LOOP_FOREVER). > 0 = stop otomatis setelah N sesi sukses.
+  TARGET_IMPRESSIONS: z.coerce.number().int().min(0).default(0),
 });
 
 export const Config = ConfigSchema.parse(process.env);

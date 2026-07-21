@@ -94,6 +94,11 @@ body{background:var(--bg);color:var(--text);font-family:'Courier New',monospace;
   <div class="card"><div class="clbl">Success Rate</div><div class="cval" id="cRate">—</div><div class="csub" id="cRateSub">sukses / gagal</div></div>
   <div class="card"><div class="clbl">Proxy Pool</div><div class="cval" id="cPool">—</div><div class="csub">proxy valid</div></div>
   <div class="card"><div class="clbl">Proxy Retry</div><div class="cval warn" id="cRetry">0</div><div class="csub">total retry proxy gagal</div></div>
+  <div class="card" id="cTargetCard" style="display:none"><div class="clbl">Target</div><div class="cval" id="cTargetVal">—</div><div class="csub" id="cTargetSub">impressions</div></div>
+</div>
+<div id="targetBarWrap" style="display:none;margin:0 12px 6px;background:var(--surf);border:1px solid var(--border);border-radius:3px;padding:8px 14px">
+  <div style="font-size:9px;color:var(--dim);letter-spacing:1.5px;text-transform:uppercase;margin-bottom:5px;display:flex;justify-content:space-between"><span>&#127919; Progress ke Target</span><span id="targetPct">0%</span></div>
+  <div style="height:6px;background:var(--border);border-radius:3px;overflow:hidden"><div id="targetFill" style="height:100%;background:var(--green);border-radius:3px;transition:width .4s ease;width:0%"></div></div>
 </div>
 
 <div class="cards" style="padding-top:0">
@@ -167,6 +172,16 @@ function updateUI(s){
   document.getElementById('cRateSub').textContent = s.successSessions+' sukses / '+s.failedSessions+' gagal';
   document.getElementById('cPool').textContent = s.proxyPoolSize>0 ? s.proxyPoolSize : '—';
   document.getElementById('cRetry').textContent = s.proxyRetries;
+  // Target impressions
+  if(s.targetImpressions>0){
+    document.getElementById('cTargetCard').style.display='';
+    document.getElementById('targetBarWrap').style.display='';
+    var pct=Math.min(100,Math.round((s.successSessions/s.targetImpressions)*100));
+    document.getElementById('cTargetVal').textContent=s.successSessions+'/'+s.targetImpressions;
+    document.getElementById('cTargetSub').textContent=pct+'% tercapai';
+    document.getElementById('targetFill').style.width=pct+'%';
+    document.getElementById('targetPct').textContent=pct+'%';
+  }
   // Persistent uptime cards
   document.getElementById('cRestart').textContent = s.restartCount;
   if(s.firstStartAt>0){

@@ -173,7 +173,19 @@ export class PuppeteerStealthEngine implements BrowserEngine {
 
   async scroll(deltaX: number, deltaY: number): Promise<void> {
     if (!this.page) throw new Error('Engine not initialized');
-    await (this.page as any).mouse.wheel({ deltaX, deltaY });
+    try {
+      // Coba mouse.wheel dulu (lebih realistis, terdeteksi sebagai human scroll)
+      await (this.page as any).mouse.wheel({ deltaX, deltaY });
+    } catch {
+      // Fallback ke window.scrollBy — bekerja di semua halaman termasuk non-scrollable SPA
+      // Tidak throw, tidak merusak sesi jika halaman memang tidak bisa di-scroll
+      try {
+        await this.page.evaluate(
+          (dx: number, dy: number) => { try { window.scrollBy(dx, dy); } catch { /* halaman tidak scrollable, abaikan */ } },
+          deltaX, deltaY
+        );
+      } catch { /* page mungkin sudah tertutup, abaikan */ }
+    }
   }
 
   async mouseMove(x: number, y: number): Promise<void> {

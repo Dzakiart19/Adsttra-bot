@@ -39,6 +39,7 @@ export interface LiveState {
   failedSessions: number;
   proxyRetries: number;
   proxyPoolSize: number;
+  targetImpressions: number; // 0 = tidak ada target
 
   log: LogEntry[];
 }
@@ -70,6 +71,7 @@ class StateServiceSingleton extends EventEmitter {
     failedSessions: 0,
     proxyRetries: 0,
     proxyPoolSize: 0,
+    targetImpressions: 0,
     log: [],
   };
 
