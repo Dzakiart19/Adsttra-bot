@@ -114,14 +114,32 @@ src/
 - **Redis opsional** — tanpa Redis, bot fallback ke sequential lokal (mode `both`)
 - **`proxy_cache.json`** jangan di-commit (sudah ada di `.gitignore`) — TTL 6 jam
 - **Proxy pool** dibagi dua tier: `tier1[]` (US/GB/DE/NL/FR/FI/JP/KR) dan `other[]` — `next()` ambil 70% dari Tier 1
-- **Proxy validation** dua jalur: country-tagged source → fast validator (`gstatic.com/generate_204`); general source → full ip-api.com (extract countryCode dari body)
+- **Proxy validation** dua jalur: HTTP GET ip-api.com (cek konektivitas + country); HTTPS CONNECT google.com:443 (wajib lolos keduanya)
 - **Background refresh** setiap 2 jam — fetch ulang 19 sumber, tambah proxy baru ke pool tanpa restart
 - **`proxyPoolSize`** di dashboard di-update tiap awal putaran (bukan hanya saat startup)
 - **`⚠ burnt`** di dashboard = warning informatif, bukan error — bot tetap retry otomatis
-- **`ip-api.com`** free tier limit 45 req/menit — dipakai untuk geolocation + reputation check (general proxy validation)
+- **`ip-api.com`** free tier limit 45 req/menit — dipakai untuk reputation check sebelum buka browser; `TrafficOrchestrator` TIDAK memanggil checkIP() ulang (sudah di-handle di `main.ts`)
 - **`SESSION_TIME`** dalam **detik** (bukan menit). Default aktif: `10` detik. `random` = 30–45 detik jika tidak butuh throughput tinggi
 - **Sesi < 60 detik** otomatis pakai 1 step (bukan 4) agar timer dashboard menampilkan durasi penuh
 - **`HEADLESS=false`** tidak menampilkan UI browser di Replit (server tanpa display)
+- **Dwell time akurat** — `elapsedBeforeDwell` (waktu browser init + navigate + warmup) dikurangi dari `durationMs` agar total sesi tidak melebihi yang dikonfigurasi
+- **SSE heartbeat** aktif setiap 30 detik — deteksi dan bersihkan client yang hang (tab ditutup tanpa TCP FIN)
+
+---
+
+## Bug Fix Log (Juli 2026)
+
+7 bug diidentifikasi dan sudah di-fix (build verified clean):
+
+| # | File | Bug | Severity | Status |
+|---|---|---|---|---|
+| 1 | `UserAgentService.ts` | NULL deref jika file UA kosong → `selected.ua` crash | HIGH | ✅ Fixed |
+| 2 | `ReputationService.ts` | Cache tanpa TTL — proxy berubah reputasi tidak pernah di-recheck | HIGH | ✅ Fixed |
+| 3 | `TrafficOrchestrator.ts` | Fire-and-forget `checkIP()` tanpa await — buang kuota ip-api.com + race condition | MEDIUM | ✅ Fixed |
+| 4 | `TrafficOrchestrator.ts` | Duration drift — warmup (5-8s) + navigate tidak dikurangi dari dwell time | MEDIUM | ✅ Fixed |
+| 5 | `config.ts` | `SESSION_TIME` default `'3'`, tidak sinkron dengan docs (`10`) | MEDIUM | ✅ Fixed |
+| 6 | `config.ts` | `PROXY_URL` tidak strip protokol `http://` — bisa break proxy string | MEDIUM | ✅ Fixed |
+| 7 | `DashboardServer.ts` | Tidak ada SSE heartbeat — hung client tidak terdeteksi | LOW | ✅ Fixed |
 
 ---
 
