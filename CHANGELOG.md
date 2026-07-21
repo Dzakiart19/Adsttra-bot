@@ -4,6 +4,14 @@ Semua perubahan penting pada project ini didokumentasikan di sini.
 
 ---
 
+## [2.6.0] - 2026-07-22
+
+### Changed
+
+- **`SESSION_TIME` default direkomendasikan `10` detik** untuk CPM network (Adsterra, EffectiveCPM, dll): Impression dihitung saat ad tag ter-render di browser — terjadi dalam 2–3 detik pertama setelah warm-up (`networkidle2`) selesai. Dwell time panjang (30–45 detik) tidak menambah impression baru, hanya membuang throughput. Dengan `SESSION_TIME=10`, bot bisa menghasilkan 3–4× lebih banyak impression per jam dibanding `random` (30–45 detik).
+
+---
+
 ## [2.5.0] - 2026-07-22
 
 ### Changed

@@ -27,7 +27,7 @@ Pool referrer default mencakup: `Facebook`, `Instagram`, `X / Twitter`, `TikTok`
 ### 3. Buka URL Target
 `page.goto(url, { waitUntil: 'networkidle2' })` — bot tunggu semua asset selesai dimuat sebelum lanjut.
 
-### 4. Diam di Halaman 30–45 Detik — Sambil Aktif
+### 4. Diam di Halaman ~10 Detik — Sambil Aktif
 Selama durasi sesi, `BehaviorService` loop terus-menerus memilih aksi acak:
 
 | Aksi | Probabilitas (medium) | Detail |
@@ -104,7 +104,7 @@ Salin `.env.example` dan sesuaikan, atau set langsung di tab Secrets Replit.
 | ---------------------------- | -------------------------- | ----------------------------------------------------------------- |
 | `DEFAULT_URL`                | *(wajib diisi)*            | URL target utama                                                  |
 | `MAX_SESSIONS`               | `1`                        | Jumlah sesi browser per putaran                                   |
-| `SESSION_TIME`               | `random`                   | Durasi sesi dalam **detik** (integer) atau `random` = 30–45 detik acak |
+| `SESSION_TIME`               | `10`                       | Durasi sesi dalam **detik** (integer) atau `random` = 30–45 detik acak. Untuk CPM network, 10 detik cukup — iklan sudah terindeks saat warm-up selesai |
 | `LOOP_FOREVER`               | `true`                     | Loop terus-menerus tanpa henti                                    |
 | `LOOP_COOLDOWN_SEC`          | `0`                        | Jeda antar putaran (detik). `0` = tanpa cooldown, langsung ulang  |
 | `HEADLESS`                   | `true`                     | Jalankan browser tanpa UI                                         |
@@ -131,7 +131,7 @@ Salin `.env.example` dan sesuaikan, atau set langsung di tab Secrets Replit.
 | `LOG_LEVEL`                  | `info`                     | Level log: `error`, `warn`, `info`, `debug`                       |
 | `NODE_ENV`                   | `development`              | Environment: `development`, `production`, `test`                  |
 
-> **Catatan `SESSION_TIME`**: nilai integer = detik. `random` = 30–45 detik acak per sesi.
+> **Catatan `SESSION_TIME`**: nilai integer = detik. `random` = 30–45 detik acak per sesi. Untuk CPM network (Adsterra, dll) cukup `10` — impression sudah terhitung saat ad tag render, dwell time panjang tidak menambah impression baru.
 
 ---
 
