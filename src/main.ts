@@ -26,7 +26,7 @@ async function runProducer(proxyPool?: ProxyService) {
 
   for (let i = 0; i < Config.MAX_SESSIONS; i++) {
     const durationSec = Config.SESSION_TIME === 'random'
-      ? (Math.floor(Math.random() * 11) + 20)  // 20–30 detik
+      ? (Math.floor(Math.random() * 16) + 30)  // 30–45 detik
       : parseInt(Config.SESSION_TIME);
     const durationMin = durationSec / 60;       // QueueService memakai menit
 
@@ -59,9 +59,9 @@ async function runWorker(proxyPool?: ProxyService) {
 
         // ── Reputation pre-check: skip burnt proxy sebelum buka browser ──
         const rep = await ReputationService.checkIP(proxyStr);
-        if (rep && (rep.hosting || rep.proxy || rep.vpn)) {
-          StateService.update({ proxyRetries: StateService.getState().proxyRetries + 1, proxyBurnt: true, action: `⚠ Worker proxy burnt (${proxyStr}), skip...` });
-          logger.warn(`Worker: Proxy burnt — skip tanpa buka browser (${proxyStr})`);
+        if (rep && (rep.hosting || rep.vpn)) {
+          StateService.update({ proxyRetries: StateService.getState().proxyRetries + 1, proxyBurnt: true, action: `⚠ Worker proxy datacenter/vpn (${proxyStr}), skip...` });
+          logger.warn(`Worker: Proxy datacenter/vpn — skip tanpa buka browser (${proxyStr})`);
           continue;
         }
 
@@ -165,7 +165,7 @@ async function bootstrap() {
 
           for (let i = 0; i < Config.MAX_SESSIONS; i++) {
             const durationMs = Config.SESSION_TIME === 'random'
-              ? (Math.floor(Math.random() * 11) + 20) * 1000  // 20–30 detik
+              ? (Math.floor(Math.random() * 16) + 30) * 1000  // 30–45 detik
               : parseInt(Config.SESSION_TIME) * 1000;          // SESSION_TIME dalam detik
 
             // Coba dengan proxy (maks 5 proxy berbeda), lalu fallback direct
@@ -185,9 +185,9 @@ async function bootstrap() {
                 action: `Cek reputasi proxy ${proxyStr}...`,
               });
               const rep = await ReputationService.checkIP(proxyStr);
-              if (rep && (rep.hosting || rep.proxy || rep.vpn)) {
-                StateService.update({ proxyBurnt: true, proxyRetries: StateService.getState().proxyRetries + 1, action: `⚠ Proxy burnt (${proxyStr}), skip → coba berikutnya...` });
-                logger.warn(`[R${round}·S${i+1}] Proxy burnt — skip tanpa buka browser (${proxyStr})`);
+              if (rep && (rep.hosting || rep.vpn)) {
+                StateService.update({ proxyBurnt: true, proxyRetries: StateService.getState().proxyRetries + 1, action: `⚠ Proxy datacenter/vpn (${proxyStr}), skip → coba berikutnya...` });
+                logger.warn(`[R${round}·S${i+1}] Proxy datacenter/vpn — skip tanpa buka browser (${proxyStr})`);
                 continue;
               }
 

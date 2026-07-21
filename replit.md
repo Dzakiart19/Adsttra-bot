@@ -45,7 +45,8 @@ npm start          # jalankan dari dist/
 |---|---|---|
 | `DEFAULT_URL` | URL target | Wajib diisi |
 | `MAX_SESSIONS` | `1` | 1 sesi per putaran |
-| `SESSION_TIME` | `random` | 20–30 **detik** acak per sesi |
+| `SESSION_TIME` | `random` | 30–45 **detik** acak per sesi |
+| `MAX_SESSIONS` | `5` | 5 sesi browser paralel per putaran |
 | `LOOP_FOREVER` | `true` | Loop terus-menerus tanpa henti |
 | `LOOP_COOLDOWN_SEC` | `0` | Tanpa cooldown antar putaran |
 | `USE_FREE_PROXIES` | `true` | Auto-scrape + cache proxy gratis |
