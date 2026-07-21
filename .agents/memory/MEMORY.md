@@ -3,3 +3,4 @@
 - [Worker proxy retry](worker-proxy-retry.md) — runWorker() accepts proxyPool; retry logic mirrors local mode (max 5 attempts, proxy error detection)
 - [Chrome library & start.sh](chrome-start-sh.md) — start.sh reads .nix_env first (baked at build), falls back to env.json; never use find /nix/store (timeout)
 - [Chrome launch error detection](chrome-launch-error-detection.md) — "Failed to launch the browser process" is NOT a proxy error; must break retry loop + circuit breaker
+- [Target-site proxy block detection](target-proxy-block-detection.md) — after navigation, check body text for "Anonymous Proxy detected." etc; throw ERR_PROXY to trigger retry loop

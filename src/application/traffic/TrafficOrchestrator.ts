@@ -145,7 +145,55 @@ export class TrafficOrchestrator {
         await this.engine.navigate(config.url);
       }
 
-      // 3. Ad Warm-up: tunggu script iklan benar-benar initialize
+      // 3. Proxy-block detection: cek apakah target site memblok IP proxy ini
+      //
+      // Banyak ad network (effectivecpmnetwork.com, dll) mendeteksi proxy di level
+      // HTTP dan menampilkan halaman blokir ("Anonymous Proxy detected.", "Access denied", dll)
+      // alih-alih konten iklan. Jika tidak dideteksi, bot akan diam di halaman kosong
+      // tanpa impression terhitung, dan proxy burnt tidak terdeteksi.
+      //
+      // Solusi: cek body text setelah navigasi. Jika ada indikasi blokir,
+      // lempar ERR_PROXY agar retry logic di main.ts aktif (coba proxy berikutnya).
+      {
+        try {
+          const bodyText: string = await this.engine.evaluate(() => {
+            const text = (document.body?.innerText || document.body?.textContent || '').trim();
+            return text.substring(0, 600);
+          });
+
+          // Pola umum halaman blokir proxy dari berbagai ad network & CDN
+          const BLOCK_PATTERNS = [
+            /anonymous proxy detected/i,
+            /proxy detected/i,
+            /vpn detected/i,
+            /your ip.*blocked/i,
+            /ip.*blocked/i,
+            /access denied/i,
+            /you have been blocked/i,
+            /suspicious activity/i,
+            /automated.*traffic/i,
+            /bot.*detected/i,
+          ];
+
+          const isBlocked = bodyText.length < 300 && BLOCK_PATTERNS.some(re => re.test(bodyText));
+          if (isBlocked) {
+            const shortText = bodyText.substring(0, 120).replace(/\n/g, ' ');
+            logger.warn(`[TrafficOrchestrator] Proxy diblok oleh target site: "${shortText}"`);
+            StateService.update({ action: `⚠ Proxy diblok target site — retry proxy lain...` });
+            throw new Error(`ERR_PROXY: Target site blocked this proxy IP — "${shortText}"`);
+          }
+
+          // Log konfirmasi: berapa karakter yang dimuat (indikasi halaman real vs blokir)
+          logger.debug(`[TrafficOrchestrator] Page loaded: ${bodyText.length} chars — proxy OK`);
+        } catch (checkErr: any) {
+          // Jika error adalah proxy block yang kita lempar sendiri → re-throw
+          if (checkErr?.message?.includes('ERR_PROXY')) throw checkErr;
+          // Evaluate error lain (page crash, dll) → abaikan, lanjut
+          logger.debug('[TrafficOrchestrator] Proxy-block check skipped (evaluate error)', { err: checkErr?.message });
+        }
+      }
+
+      // 4. Ad Warm-up: tunggu script iklan benar-benar initialize
       //
       // KRITIS untuk impression count: Adsterra & ad network lain menggunakan
       // pola deferred initialization — script mereka baru fire impression call

@@ -4,6 +4,18 @@ Semua perubahan penting pada project ini didokumentasikan di sini.
 
 ---
 
+## [2.4.0] - 2026-07-22
+
+### Added
+
+- **Target-site proxy-block detection** (`TrafficOrchestrator`): Setelah navigasi ke URL target, bot kini memeriksa body text halaman untuk pola blokir proxy (`"Anonymous Proxy detected."`, `"Access denied"`, `"Bot detected"`, dll). Jika terdeteksi, langsung lempar `ERR_PROXY` agar retry logic aktif dan bot coba proxy berikutnya — impression tidak terbuang sia-sia di halaman blokir.
+
+### Fixed
+
+- **Sesi di halaman blokir proxy**: Sebelumnya, jika target site (mis. `effectivecpmnetwork.com`) memblok IP proxy dan menampilkan `"Anonymous Proxy detected."`, bot tidak mendeteksinya dan duduk diam selama durasi sesi penuh tanpa impression terhitung. Kini terdeteksi dalam <2 detik dan langsung retry.
+
+---
+
 ## [2.3.0] - 2026-07-20
 
 ### Fixed
