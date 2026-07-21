@@ -232,6 +232,8 @@ async function bootstrap() {
                 action: `Sesi R${round}·S${i+1} di-skip (semua proxy gagal/burnt)`,
               });
               logger.warn(`[R${round}·S${i+1}] Semua proxy gagal/burnt — sesi di-skip (no direct fallback)`);
+              // Yield event loop agar HTTP dashboard tetap bisa respond
+              await new Promise(resolve => setTimeout(resolve, 200));
             }
           }
 
