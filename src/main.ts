@@ -6,6 +6,7 @@ import { logger } from './infrastructure/logging/logger';
 import { MetricsService } from './infrastructure/monitoring/MetricsService';
 import { QueueService, TrafficJobData } from './infrastructure/queue/QueueService';
 import { ProxyService } from './infrastructure/proxy/ProxyService';
+import { WebshareProxyService } from './infrastructure/proxy/WebshareProxyService';
 import { StateService } from './infrastructure/monitoring/StateService';
 import { startDashboard } from './infrastructure/monitoring/DashboardServer';
 import { ReputationService } from './infrastructure/monitoring/ReputationService';
@@ -141,6 +142,16 @@ async function bootstrap() {
     });
   }
 
+  // Load Webshare proxy service (prioritas utama, tanpa reputation check)
+  let webshareService: WebshareProxyService | undefined;
+  if (Config.WEBSHARE_PROXY_LIST) {
+    webshareService = new WebshareProxyService(Config.WEBSHARE_PROXY_LIST, Config.WEBSHARE_MAX_FAILURES);
+    if (webshareService.size === 0) {
+      logger.warn('[Webshare] Tidak ada proxy valid dari WEBSHARE_PROXY_LIST — periksa format env var.');
+      webshareService = undefined;
+    }
+  }
+
   // Execute Roles
   if (Config.BOT_ROLE === 'producer' || Config.BOT_ROLE === 'both') {
     if (QueueService.isDistributedEnabled()) {
@@ -195,7 +206,68 @@ async function bootstrap() {
             const MAX_PROXY_RETRIES = proxyPool && proxyPool.size > 0 ? Math.min(5, proxyPool.size) : 0;
             let sessionSuccess = false;
 
-            // ── Proxy attempts ──────────────────────────────────────────────────
+            // ── Webshare priority attempt (tanpa reputation check, tanpa filter negara) ──
+            if (webshareService && webshareService.isActive() && !sessionSuccess) {
+              const wp = webshareService.next();
+              const wsProxyStr = `${wp.host}:${wp.port}`;
+              StateService.update({
+                sessionIndex: i, attempt: 0, maxAttempts: MAX_PROXY_RETRIES + 1,
+                proxy: `[WS] ${wsProxyStr}`, proxyBurnt: false,
+                targetUrl: Config.DEFAULT_URL, referrer: null, step: 0,
+                action: `[Webshare] Memulai sesi via ${wsProxyStr}...`,
+              });
+              logger.info(`[R${round}·S${i+1}/${Config.MAX_SESSIONS}] Webshare proxy: ${wsProxyStr}`);
+
+              const wsFingerprint = FingerprintService.generate();
+              const wsEngine = new PuppeteerStealthEngine();
+              try {
+                await new TrafficOrchestrator(wsEngine).run(new Session({
+                  id: `r${round}-s${i}-ws`,
+                  url: Config.DEFAULT_URL,
+                  userAgent: wsFingerprint.userAgent,
+                  viewport: wsFingerprint.viewport,
+                  durationMs,
+                  proxy: { server: wsProxyStr, username: wp.username, password: wp.password },
+                  userDataDir: Config.PERSISTENT_SESSIONS ? `${Config.SESSIONS_DATA_DIR}/session-${i}` : undefined,
+                }), {
+                  headless: Config.HEADLESS,
+                  platform: wsFingerprint.platform,
+                  fingerprintScript: FingerprintService.getInjectionScript(wsFingerprint),
+                });
+                sessionSuccess = true;
+                webshareService.onSuccess();
+                consecutiveChromeFails = 0;
+                const stWs = StateService.getState();
+                const newSuccessWs = stWs.successSessions + 1;
+                StateService.update({ successSessions: newSuccessWs, totalSessions: stWs.totalSessions + 1, step: 0, action: `Sesi R${round}·S${i+1} berhasil ✓ (Webshare)` });
+                if (Config.TARGET_IMPRESSIONS > 0 && newSuccessWs >= Config.TARGET_IMPRESSIONS) {
+                  logger.info(`🎯 TARGET ${Config.TARGET_IMPRESSIONS} impressions TERCAPAI! Bot berhenti.`);
+                  StateService.update({ status: 'done', action: `🎯 Target ${Config.TARGET_IMPRESSIONS} impressions tercapai — bot selesai!` });
+                  await new Promise(resolve => setTimeout(resolve, 2000));
+                  process.exit(0);
+                }
+              } catch (wsErr: any) {
+                if (isChromeLaunchError(wsErr)) {
+                  // Chrome fail bukan masalah Webshare — jangan count sebagai failure
+                  consecutiveChromeFails++;
+                  const wsCode = wsErr.message?.match(/Code:\s*(\d+)/)?.[1] ?? 'unknown';
+                  logger.error(`[R${round}·S${i+1}] ⛔ Chrome gagal launch (exit ${wsCode}) saat Webshare attempt`);
+                  StateService.update({ step: 0, action: `⛔ Chrome gagal launch (exit ${wsCode}) — lihat log` });
+                  if (consecutiveChromeFails >= MAX_CHROME_FAILS_BEFORE_PAUSE) {
+                    StateService.update({ status: 'cooldown', cooldownEndsAt: Date.now() + CHROME_FAIL_PAUSE_MS, action: `⛔ Circuit breaker aktif — pause ${CHROME_FAIL_PAUSE_MS / 1000}s...` });
+                    await new Promise(resolve => setTimeout(resolve, CHROME_FAIL_PAUSE_MS));
+                    StateService.update({ status: 'running' });
+                    consecutiveChromeFails = 0;
+                  }
+                } else {
+                  // Proxy/network error — hitung sebagai Webshare failure
+                  webshareService.onFailure();
+                  logger.warn(`[R${round}·S${i+1}] Webshare gagal (${wsErr.message?.split('\n')[0]}) — fallback ke scraped proxies`);
+                }
+              }
+            }
+
+            // ── Proxy attempts (scraped pool, fallback jika Webshare gagal/limit) ─────
             for (let attempt = 0; attempt < MAX_PROXY_RETRIES && !sessionSuccess; attempt++) {
               const p = proxyPool!.next()!;
               const proxyStr = `${p.host}:${p.port}`;

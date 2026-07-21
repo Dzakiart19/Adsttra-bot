@@ -39,6 +39,27 @@ npm start          # jalankan dari dist/
 
 ---
 
+## Webshare.io Proxy (Prioritas Utama)
+
+Bot menggunakan proxy Webshare sebagai **prioritas pertama** sebelum proxy gratisan.
+
+| Variable | Format | Keterangan |
+|---|---|---|
+| `WEBSHARE_PROXY_LIST` | `host:port:user:pass,host:port:user:pass,...` | Daftar proxy dari Webshare dashboard (tanpa spasi) |
+| `WEBSHARE_MAX_FAILURES` | angka (default `10`) | Berapa kali gagal berturut sebelum dianggap limit bulanan |
+
+**Alur:**
+1. Setiap sesi → coba **Webshare dulu** (tanpa reputation check, tanpa filter negara)
+2. Webshare sukses → lanjut, reset failure counter
+3. Webshare gagal → catat sebagai failure, fallback ke scraped proxies untuk sesi itu
+4. Failure ≥ `WEBSHARE_MAX_FAILURES` → anggap limit bulanan tercapai, **fallback permanen ke scraped proxies**
+5. Setelah **30 hari** sejak limit → Webshare otomatis aktif kembali sebagai prioritas
+6. State disimpan di `webshare_state.json` (persistent saat restart, tidak di-commit)
+
+**Chrome launch error tidak dihitung sebagai Webshare failure** — hanya proxy/network error yang dihitung.
+
+---
+
 ## Konfigurasi Aktif (Secrets)
 
 | Variable | Nilai Aktif | Keterangan |

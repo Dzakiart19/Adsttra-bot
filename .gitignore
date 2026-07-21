@@ -29,6 +29,7 @@ package-lock.json
 # Runtime cache files — dibuat ulang otomatis saat bot jalan
 proxy_cache.json
 uptime_stats.json
+webshare_state.json
 
 # Chrome binary — terlalu besar untuk GitHub (180MB+), auto-download oleh start.sh
 # Metadata folder boleh di-commit, tapi binary-nya tidak
