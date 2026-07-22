@@ -38,8 +38,8 @@ const FLUSH_BATCH       = 10;                  // tulis JSON setiap N proxy baru
 const FLUSH_INTERVAL_MS = 5000;                // atau setiap 5 detik
 
 // ── Sumber proxy publik ────────────────────────────────────────────────────────
-// Hanya sumber yang TERBUKTI LOLOS live test (2-step: HTTP ip-api.com + HTTPS CONNECT).
-// Sumber dengan 0% pass rate di live test sudah dihapus — buang-buang waktu validasi.
+// Diurutkan berdasarkan live test 2-step (HTTP ip-api.com + HTTPS CONNECT).
+// Terakhir ditest: 2026-07-22. Sumber 0% pass rate DIHAPUS — buang waktu validasi.
 //
 // Urutan: pass rate tertinggi → terendah (streaming validator isi pool dari atas).
 // `country` opsional: jika diisi, skip query ip-api.com saat validasi (fast-path).
@@ -47,59 +47,39 @@ const API_SOURCES: Array<{ name: string; url: string; country?: string; parseMod
 
   // ── 50% pass rate ─────────────────────────────────────────────────────────
   {
-    name: 'proxyscrape NL 🇳🇱',
-    url: 'https://api.proxyscrape.com/v3/free-proxy-list/get?request=displayproxies&proxy_type=http&timeout=5000&country=NL&ssl=all&anonymity=all',
-    country: 'NL',
+    // Pre-checked list — hanya proxy yang respond saat list digenerate. #1 best source.
+    name: 'yakumo pre-checked',
+    url: 'https://raw.githubusercontent.com/elliottophellia/yakumo/master/results/http/global/http_checked.txt',
   },
 
   // ── 33% pass rate ─────────────────────────────────────────────────────────
   {
+    // Latency tercepat (375ms avg) — prioritas untuk isi pool awal.
     name: 'monosans/proxy-list HTTP',
     url: 'https://raw.githubusercontent.com/monosans/proxy-list/main/proxies/http.txt',
   },
   {
-    name: 'proxyscrape US 🇺🇸',
-    url: 'https://api.proxyscrape.com/v3/free-proxy-list/get?request=displayproxies&proxy_type=http&timeout=5000&country=US&ssl=all&anonymity=all',
-    country: 'US',
+    name: 'proxyscrape NL 🇳🇱',
+    url: 'https://api.proxyscrape.com/v3/free-proxy-list/get?request=displayproxies&proxy_type=http&timeout=5000&country=NL&ssl=all&anonymity=all',
+    country: 'NL',
   },
   {
-    // Volume terbesar (8143 proxy) yang masih perform bagus.
-    name: 'zevtyardt/proxy-list HTTP',
-    url: 'https://raw.githubusercontent.com/zevtyardt/proxy-list/main/http.txt',
+    name: 'proxyscrape DE 🇩🇪',
+    url: 'https://api.proxyscrape.com/v3/free-proxy-list/get?request=displayproxies&proxy_type=http&timeout=5000&country=DE&ssl=all&anonymity=all',
+    country: 'DE',
   },
 
   // ── 17% pass rate ─────────────────────────────────────────────────────────
   {
-    // Format "IP:PORT CountryCode-..." → custom regex parser.
-    name: 'spys.me',
-    url: 'https://spys.me/proxy.txt',
-    parseMode: 'regex',
-  },
-  {
-    name: 'proxyscrape FR 🇫🇷',
-    url: 'https://api.proxyscrape.com/v3/free-proxy-list/get?request=displayproxies&proxy_type=http&timeout=5000&country=FR&ssl=all&anonymity=all',
-    country: 'FR',
-  },
-  {
-    // Elite/anonymous only + 90% uptime filter. JSON format → parser khusus.
-    name: 'geonode elite anonymous',
-    url: 'https://proxylist.geonode.com/api/proxy-list?limit=500&page=1&sort_by=lastChecked&sort_type=desc&filterUpTime=90&protocols=http,https&anonymityLevel=elite&anonymityLevel=anonymous',
-    parseMode: 'json-geonode',
-  },
-  {
-    // Pre-checked — hanya proxy yang respond saat list digenerate.
-    name: 'elliottophellia/yakumo HTTP checked',
-    url: 'https://raw.githubusercontent.com/elliottophellia/yakumo/master/results/http/global/http_checked.txt',
-  },
-  {
-    // Volume 3011 proxy, ada residential US.
-    name: 'TheSpeedX/PROXY-List HTTP',
-    url: 'https://raw.githubusercontent.com/TheSpeedX/PROXY-List/master/http.txt',
-  },
-  {
+    // Latency sangat cepat (363ms avg) walau pass rate rendah.
     name: 'proxyscrape JP 🇯🇵',
     url: 'https://api.proxyscrape.com/v3/free-proxy-list/get?request=displayproxies&proxy_type=http&timeout=5000&country=JP&ssl=all&anonymity=all',
     country: 'JP',
+  },
+  {
+    // Volume besar (3011 proxy) — ada residential GB; pass rate 17%.
+    name: 'TheSpeedX/PROXY-List HTTP',
+    url: 'https://raw.githubusercontent.com/TheSpeedX/PROXY-List/master/http.txt',
   },
 ];
 
