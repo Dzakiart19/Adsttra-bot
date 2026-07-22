@@ -137,11 +137,12 @@ src/
 - **Proxy pool** dibagi dua tier: `tier1[]` (US/GB/CA/AU/DE/NL/FR/SE/DK/FI/JP/KR/dll) dan `other[]` — `next()` ambil 70% dari Tier 1
 - **Proxy validation** dua jalur: HTTP GET ip-api.com (cek konektivitas + country); HTTPS CONNECT google.com:443 (wajib lolos keduanya)
 - **Background refresh** setiap 2 jam — fetch ulang semua sumber, tambah proxy baru ke pool tanpa restart
-- **Urutan sumber proxy** dioptimalkan untuk residential/ISP (bukan datacenter):
-  - **Grup 1** (diproses PERTAMA): proxyscrape + proxifly per-negara Tier 1 → masuk pool paling cepat
-  - **Grup 2** (quality-checked): geonode elite 90% uptime, yakumo pre-checked, jetkai online-checked, vakhov fresh
-  - **Grup 3** (medium): monosans, zevtyardt, clarketm, dll
-  - **Grup 4** (diproses TERAKHIR): pool jumbo semua negara (TheSpeedX, proxyscrape all) — dominan datacenter tapi residential yang lolos tetap masuk pool
+- **Urutan sumber proxy** berdasarkan hasil live test (2-step: HTTP ip-api.com + HTTPS CONNECT google:443):
+  - **Tier A** (diproses PERTAMA, ≥33% pass rate): proxyscrape NL (50%), monosans (33%), proxyscrape US (33%), zevtyardt (33%)
+  - **Tier B** (17% pass rate): spys.me, proxyscrape FR, geonode elite, yakumo checked, TheSpeedX, proxyscrape JP
+  - **Tier C** (0% di test, potensi kecil): proxyscrape GB/DE/CA/AU/SE/DK/FI/KR + sumber campuran lain
+  - **Tier D** (diproses TERAKHIR, konsisten 0%): proxifly semua variant, jetkai/vakhov/almroot (dead saat test), proxyscrape ALL
+  - **Catatan**: proxifly semua variant (country-specific maupun all) = 0% pass rate di live test → dipindah ke Tier D
 - **`proxyPoolSize`** di dashboard di-update tiap awal putaran (bukan hanya saat startup)
 - **`⚠ burnt`** di dashboard = warning informatif, bukan error — bot tetap retry otomatis
 - **`ip-api.com`** free tier limit 45 req/menit — dipakai untuk reputation check sebelum buka browser; `TrafficOrchestrator` TIDAK memanggil checkIP() ulang (sudah di-handle di `main.ts`)

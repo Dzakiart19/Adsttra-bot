@@ -38,42 +38,108 @@ const FLUSH_BATCH       = 10;                  // tulis JSON setiap N proxy baru
 const FLUSH_INTERVAL_MS = 5000;                // atau setiap 5 detik
 
 // ── Sumber proxy publik ────────────────────────────────────────────────────────
-// Diurutkan dari PALING OPTIMAL ke paling buruk:
+// Diurutkan berdasarkan HASIL TEST LIVE (2-step: HTTP ip-api.com + HTTPS CONNECT):
 //
-// GRUP 1 — Tier 1 country-specific (paling optimal):
-//   • Pre-filter negara CPM tinggi → masuk pool Tier1 langsung
-//   • Streaming validator memproses sumber ini PERTAMA → bot mulai dengan proxy terbaik
-//   • Proxy country-specific lebih sering residential/ISP vs datacenter
+// TIER A — Proven top performers (≥33% pass rate dari test langsung):
+//   proxyscrape NL (50%), monosans (33%), proxyscrape US (33%), zevtyardt (33%)
+//   → Masuk pool PERTAMA, bot mulai dengan proxy paling andal
 //
-// GRUP 2 — Quality-checked sources:
-//   • Sudah dipre-check hidup/mati sebelum dipublish → rasio lolos lebih tinggi
-//   • Geonode filter elite/anonymous 90% uptime → hampir pasti residential
+// TIER B — Mid performers (17% pass rate, tetap berguna untuk volume):
+//   spys.me, proxyscrape FR, geonode elite, yakumo checked, TheSpeedX, proxyscrape JP
 //
-// GRUP 3 — Medium reliability:
-//   • Update rutin, tidak di-pre-check, campuran negara
+// TIER C — Country-specific lain (0% di test tapi volume kecil, ada potensi):
+//   Residential yang kebetulan masuk daftar tetap lolos 2-step validator.
+//   Sumber campuran lain yang belum terbukti.
 //
-// GRUP 4 — High volume / low quality (paling buruk, dominan datacenter):
-//   • Pool jumbo semua negara → kebanyakan datacenter, sebagian besar diblok
-//   • Tetap berguna: residential yang "nyasar" ke daftar ini ikut lolos validasi
-//   • Diproses terakhir di background — tidak menghalangi bot mulai
+// TIER D — Konsisten 0% di live test (diproses TERAKHIR di background):
+//   proxifly semua variant (0% di SEMUA test), jetkai/vakhov/almroot (dead saat test),
+//   proxyscrape ALL (jumbo tapi hampir 100% datacenter)
 //
 // `country` opsional: jika diisi, skip query ip-api.com saat validasi (fast-path).
 const API_SOURCES: Array<{ name: string; url: string; country?: string; parseMode?: 'lines' | 'regex' | 'json-geonode' }> = [
 
   // ════════════════════════════════════════════════════════════════════════════
-  // GRUP 1 — Tier 1 country-specific (diproses PERTAMA, masuk pool paling cepat)
+  // TIER A — Proven top performers (diproses PERTAMA, masuk pool paling cepat)
+  // Live test result: 33–50% pass rate (2-step: ip-api.com + HTTPS CONNECT google)
   // ════════════════════════════════════════════════════════════════════════════
 
-  // proxyscrape — negara CPM tertinggi (anonymous/elite only, timeout 5s)
   {
+    // #1 — 50% pass rate. Best performer keseluruhan di live test.
+    name: 'proxyscrape NL 🇳🇱',
+    url: 'https://api.proxyscrape.com/v3/free-proxy-list/get?request=displayproxies&proxy_type=http&timeout=5000&country=NL&ssl=all&anonymity=all',
+    country: 'NL',
+  },
+  {
+    // #2 — 33% pass rate. Volume 255 proxy, ISP mix US bagus.
+    name: 'monosans/proxy-list HTTP',
+    url: 'https://raw.githubusercontent.com/monosans/proxy-list/main/proxies/http.txt',
+  },
+  {
+    // #3 — 33% pass rate. Volume 215 proxy.
     name: 'proxyscrape US 🇺🇸',
     url: 'https://api.proxyscrape.com/v3/free-proxy-list/get?request=displayproxies&proxy_type=http&timeout=5000&country=US&ssl=all&anonymity=all',
     country: 'US',
   },
   {
+    // #4 — 33% pass rate. Volume 8143 proxy — terbesar yang masih perform bagus.
+    name: 'zevtyardt/proxy-list HTTP',
+    url: 'https://raw.githubusercontent.com/zevtyardt/proxy-list/main/http.txt',
+  },
+
+  // ════════════════════════════════════════════════════════════════════════════
+  // TIER B — Mid performers (17% live pass rate) — diproses kedua
+  // ════════════════════════════════════════════════════════════════════════════
+
+  {
+    // 17% pass rate. Format "IP:PORT CountryCode-..." → custom regex parser.
+    name: 'spys.me',
+    url: 'https://spys.me/proxy.txt',
+    parseMode: 'regex',
+  },
+  {
+    // 17% pass rate. Proxy FR seringkali residential/ISP.
+    name: 'proxyscrape FR 🇫🇷',
+    url: 'https://api.proxyscrape.com/v3/free-proxy-list/get?request=displayproxies&proxy_type=http&timeout=5000&country=FR&ssl=all&anonymity=all',
+    country: 'FR',
+  },
+  {
+    // 17% pass rate. Elite/anonymous filter + 90% uptime. JSON format → parser khusus.
+    name: 'geonode elite anonymous',
+    url: 'https://proxylist.geonode.com/api/proxy-list?limit=500&page=1&sort_by=lastChecked&sort_type=desc&filterUpTime=90&protocols=http,https&anonymityLevel=elite&anonymityLevel=anonymous',
+    parseMode: 'json-geonode',
+  },
+  {
+    // 17% pass rate. Pre-checked = hanya proxy yang respond saat list digenerate.
+    name: 'elliottophellia/yakumo HTTP checked',
+    url: 'https://raw.githubusercontent.com/elliottophellia/yakumo/master/results/http/global/http_checked.txt',
+  },
+  {
+    // 17% pass rate. Volume 3011 proxy, ada residential US di dalamnya.
+    name: 'TheSpeedX/PROXY-List HTTP',
+    url: 'https://raw.githubusercontent.com/TheSpeedX/PROXY-List/master/http.txt',
+  },
+  {
+    // 17% pass rate. Proxy JP kadang ISP residential Asia.
+    name: 'proxyscrape JP 🇯🇵',
+    url: 'https://api.proxyscrape.com/v3/free-proxy-list/get?request=displayproxies&proxy_type=http&timeout=5000&country=JP&ssl=all&anonymity=all',
+    country: 'JP',
+  },
+
+  // ════════════════════════════════════════════════════════════════════════════
+  // TIER C — Country-specific lain + sumber campuran (0% di test, ada potensi)
+  // Residential yang "nyasar" ke daftar ini tetap lolos 2-step validator.
+  // Divalidasi di background setelah Tier A & B sudah mengisi pool.
+  // ════════════════════════════════════════════════════════════════════════════
+
+  {
     name: 'proxyscrape GB 🇬🇧',
     url: 'https://api.proxyscrape.com/v3/free-proxy-list/get?request=displayproxies&proxy_type=http&timeout=5000&country=GB&ssl=all&anonymity=all',
     country: 'GB',
+  },
+  {
+    name: 'proxyscrape DE 🇩🇪',
+    url: 'https://api.proxyscrape.com/v3/free-proxy-list/get?request=displayproxies&proxy_type=http&timeout=5000&country=DE&ssl=all&anonymity=all',
+    country: 'DE',
   },
   {
     name: 'proxyscrape CA 🇨🇦',
@@ -84,21 +150,6 @@ const API_SOURCES: Array<{ name: string; url: string; country?: string; parseMod
     name: 'proxyscrape AU 🇦🇺',
     url: 'https://api.proxyscrape.com/v3/free-proxy-list/get?request=displayproxies&proxy_type=http&timeout=5000&country=AU&ssl=all&anonymity=all',
     country: 'AU',
-  },
-  {
-    name: 'proxyscrape DE 🇩🇪',
-    url: 'https://api.proxyscrape.com/v3/free-proxy-list/get?request=displayproxies&proxy_type=http&timeout=5000&country=DE&ssl=all&anonymity=all',
-    country: 'DE',
-  },
-  {
-    name: 'proxyscrape NL 🇳🇱',
-    url: 'https://api.proxyscrape.com/v3/free-proxy-list/get?request=displayproxies&proxy_type=http&timeout=5000&country=NL&ssl=all&anonymity=all',
-    country: 'NL',
-  },
-  {
-    name: 'proxyscrape FR 🇫🇷',
-    url: 'https://api.proxyscrape.com/v3/free-proxy-list/get?request=displayproxies&proxy_type=http&timeout=5000&country=FR&ssl=all&anonymity=all',
-    country: 'FR',
   },
   {
     name: 'proxyscrape SE 🇸🇪',
@@ -116,18 +167,61 @@ const API_SOURCES: Array<{ name: string; url: string; country?: string; parseMod
     country: 'FI',
   },
   {
-    name: 'proxyscrape JP 🇯🇵',
-    url: 'https://api.proxyscrape.com/v3/free-proxy-list/get?request=displayproxies&proxy_type=http&timeout=5000&country=JP&ssl=all&anonymity=all',
-    country: 'JP',
-  },
-  {
     name: 'proxyscrape KR 🇰🇷',
     url: 'https://api.proxyscrape.com/v3/free-proxy-list/get?request=displayproxies&proxy_type=http&timeout=5000&country=KR&ssl=all&anonymity=all',
     country: 'KR',
   },
-
-  // proxifly country-specific — mirror sumber Tier 1 (double coverage, beda IP pool)
   {
+    name: 'sunny9577/proxy-scraper',
+    url: 'https://raw.githubusercontent.com/sunny9577/proxy-scraper/master/generated/http_proxies.txt',
+  },
+  {
+    name: 'roosterkid/openproxylist HTTPS',
+    url: 'https://raw.githubusercontent.com/roosterkid/openproxylist/main/HTTPS_RAW.txt',
+  },
+  {
+    name: 'ShiftyTR/Proxy-List HTTP',
+    url: 'https://raw.githubusercontent.com/ShiftyTR/Proxy-List/master/http.txt',
+  },
+  {
+    name: 'ErcinDedeoglu/proxies HTTP',
+    url: 'https://raw.githubusercontent.com/ErcinDedeoglu/proxies/main/proxies/http.txt',
+  },
+  {
+    name: 'Anonym0usWork1221/Free-Proxies HTTP',
+    url: 'https://raw.githubusercontent.com/Anonym0usWork1221/Free-Proxies/main/proxy_files/http_proxies.txt',
+  },
+
+  // ════════════════════════════════════════════════════════════════════════════
+  // TIER D — Konsisten 0% di live test (diproses TERAKHIR di background)
+  // proxifly: 0% di SEMUA variant yang ditest (GB/CA/AU/DE dan semua negara)
+  // jetkai/vakhov/almroot: dead/timeout saat test (mungkin stale)
+  // clarketm: 0% di test
+  // proxyscrape ALL: volume jumbo tapi hampir 100% datacenter
+  // ════════════════════════════════════════════════════════════════════════════
+
+  {
+    // 0% di test. 1800+ proxy tapi mungkin sudah stale/tidak diupdate.
+    name: 'jetkai/proxy-list HTTP',
+    url: 'https://raw.githubusercontent.com/jetkai/proxy-list/main/online-proxies/txt/proxies-http.txt',
+  },
+  {
+    // 0% di test. Fresh secara label tapi gagal 2-step.
+    name: 'vakhov/fresh-proxy-list',
+    url: 'https://raw.githubusercontent.com/vakhov/fresh-proxy-list/master/http.txt',
+  },
+  {
+    // 0% di test.
+    name: 'almroot/proxylist',
+    url: 'https://raw.githubusercontent.com/almroot/proxylist/master/list.txt',
+  },
+  {
+    // 0% di test.
+    name: 'clarketm/proxy-list',
+    url: 'https://raw.githubusercontent.com/clarketm/proxy-list/master/proxy-list-raw.txt',
+  },
+  {
+    // proxifly country-specific: 0% di semua 4 negara yang ditest (GB/CA/AU/DE)
     name: 'proxifly GB 🇬🇧',
     url: 'https://raw.githubusercontent.com/proxifly/free-proxy-list/main/proxies/countries/GB/data.txt',
     country: 'GB',
@@ -152,98 +246,13 @@ const API_SOURCES: Array<{ name: string; url: string; country?: string; parseMod
     url: 'https://raw.githubusercontent.com/proxifly/free-proxy-list/main/proxies/countries/FR/data.txt',
     country: 'FR',
   },
-
-  // ════════════════════════════════════════════════════════════════════════════
-  // GRUP 2 — Quality-checked sources (pre-validated atau elite/anonymous filter)
-  // ════════════════════════════════════════════════════════════════════════════
-
   {
-    // Elite & anonymous only, 90% uptime filter — rasio residential paling tinggi
-    // dari semua sumber scraped. JSON format → parser khusus.
-    name: 'geonode elite anonymous',
-    url: 'https://proxylist.geonode.com/api/proxy-list?limit=500&page=1&sort_by=lastChecked&sort_type=desc&filterUpTime=90&protocols=http,https&anonymityLevel=elite&anonymityLevel=anonymous',
-    parseMode: 'json-geonode',
-  },
-  {
-    // Pre-checked (checked list) — hanya proxy yang respond saat list digenerate
-    name: 'elliottophellia/yakumo HTTP checked',
-    url: 'https://raw.githubusercontent.com/elliottophellia/yakumo/master/results/http/global/http_checked.txt',
-  },
-  {
-    // 1800+ proxy, online-checked — jauh lebih banyak yang hidup vs unchecked list
-    name: 'jetkai/proxy-list HTTP',
-    url: 'https://raw.githubusercontent.com/jetkai/proxy-list/main/online-proxies/txt/proxies-http.txt',
-  },
-  {
-    // Fresh daily — update setiap hari, lebih sedikit yang sudah mati
-    name: 'vakhov/fresh-proxy-list',
-    url: 'https://raw.githubusercontent.com/vakhov/fresh-proxy-list/master/http.txt',
-  },
-  {
-    // ~400 proxy, aktif diupdate, relatif bersih
-    name: 'almroot/proxylist',
-    url: 'https://raw.githubusercontent.com/almroot/proxylist/master/list.txt',
-  },
-
-  // ════════════════════════════════════════════════════════════════════════════
-  // GRUP 3 — Medium reliability (update rutin, campuran, tidak pre-checked)
-  // ════════════════════════════════════════════════════════════════════════════
-
-  {
-    name: 'monosans/proxy-list HTTP',
-    url: 'https://raw.githubusercontent.com/monosans/proxy-list/main/proxies/http.txt',
-  },
-  {
-    name: 'zevtyardt/proxy-list HTTP',
-    url: 'https://raw.githubusercontent.com/zevtyardt/proxy-list/main/http.txt',
-  },
-  {
-    name: 'sunny9577/proxy-scraper',
-    url: 'https://raw.githubusercontent.com/sunny9577/proxy-scraper/master/generated/http_proxies.txt',
-  },
-  {
-    name: 'clarketm/proxy-list',
-    url: 'https://raw.githubusercontent.com/clarketm/proxy-list/master/proxy-list-raw.txt',
-  },
-  {
-    name: 'roosterkid/openproxylist HTTPS',
-    url: 'https://raw.githubusercontent.com/roosterkid/openproxylist/main/HTTPS_RAW.txt',
-  },
-  {
-    name: 'ShiftyTR/Proxy-List HTTP',
-    url: 'https://raw.githubusercontent.com/ShiftyTR/Proxy-List/master/http.txt',
-  },
-  {
-    // Format "IP:PORT CountryCode-..." → custom regex parser
-    name: 'spys.me',
-    url: 'https://spys.me/proxy.txt',
-    parseMode: 'regex',
-  },
-
-  // ════════════════════════════════════════════════════════════════════════════
-  // GRUP 4 — High volume / low quality (dominan datacenter, diproses TERAKHIR)
-  // Pool jumbo semua negara. Sebagian besar diblok target site, tapi residential
-  // yang "nyasar" ke daftar ini tetap lolos validasi dan masuk pool.
-  // ════════════════════════════════════════════════════════════════════════════
-
-  {
+    // proxifly all: 0% di test, volume 647 tapi mayoritas dead.
     name: 'proxifly/free-proxy-list HTTP',
     url: 'https://raw.githubusercontent.com/proxifly/free-proxy-list/main/proxies/protocols/http/data.txt',
   },
   {
-    name: 'Anonym0usWork1221/Free-Proxies HTTP',
-    url: 'https://raw.githubusercontent.com/Anonym0usWork1221/Free-Proxies/main/proxy_files/http_proxies.txt',
-  },
-  {
-    name: 'ErcinDedeoglu/proxies HTTP',
-    url: 'https://raw.githubusercontent.com/ErcinDedeoglu/proxies/main/proxies/http.txt',
-  },
-  {
-    name: 'TheSpeedX/PROXY-List HTTP',
-    url: 'https://raw.githubusercontent.com/TheSpeedX/PROXY-List/master/http.txt',
-  },
-  {
-    // Semua negara, volume sangat besar, mayoritas datacenter
+    // Jumbo 1600+ proxy semua negara, mayoritas datacenter — paling terakhir.
     name: 'proxyscrape all',
     url: 'https://api.proxyscrape.com/v3/free-proxy-list/get?request=displayproxies&proxy_type=http&timeout=5000&country=all&ssl=all&anonymity=all',
   },
