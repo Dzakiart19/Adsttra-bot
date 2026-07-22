@@ -40,7 +40,7 @@ const FLUSH_INTERVAL_MS = 5000;                // atau setiap 5 detik
 // ── Sumber proxy publik ────────────────────────────────────────────────────────
 // `country` opsional: jika diisi, semua proxy dari sumber ini langsung di-tag
 // dengan negara tersebut (skip parsing ip-api.com body → validasi lebih cepat).
-const API_SOURCES: Array<{ name: string; url: string; country?: string }> = [
+const API_SOURCES: Array<{ name: string; url: string; country?: string; parseMode?: 'lines' | 'regex' | 'json-geonode' }> = [
 
   // ── Tier 1 CPM — country-specific (validator fast-path, country sudah diketahui) ──
   {
@@ -129,6 +129,89 @@ const API_SOURCES: Array<{ name: string; url: string; country?: string }> = [
     name: 'proxifly/free-proxy-list HTTP',
     url: 'https://raw.githubusercontent.com/proxifly/free-proxy-list/main/proxies/protocols/http/data.txt',
   },
+
+  // ── Proxifly country-specific Tier 1 (URL sudah country-tagged) ───────────
+  {
+    name: 'proxifly GB 🇬🇧',
+    url: 'https://raw.githubusercontent.com/proxifly/free-proxy-list/main/proxies/countries/GB/data.txt',
+    country: 'GB',
+  },
+  {
+    name: 'proxifly CA 🇨🇦',
+    url: 'https://raw.githubusercontent.com/proxifly/free-proxy-list/main/proxies/countries/CA/data.txt',
+    country: 'CA',
+  },
+  {
+    name: 'proxifly AU 🇦🇺',
+    url: 'https://raw.githubusercontent.com/proxifly/free-proxy-list/main/proxies/countries/AU/data.txt',
+    country: 'AU',
+  },
+  {
+    name: 'proxifly DE 🇩🇪',
+    url: 'https://raw.githubusercontent.com/proxifly/free-proxy-list/main/proxies/countries/DE/data.txt',
+    country: 'DE',
+  },
+  {
+    name: 'proxifly FR 🇫🇷',
+    url: 'https://raw.githubusercontent.com/proxifly/free-proxy-list/main/proxies/countries/FR/data.txt',
+    country: 'FR',
+  },
+
+  // ── ProxyScrape tambahan negara Tier 1 ────────────────────────────────────
+  {
+    name: 'proxyscrape CA 🇨🇦',
+    url: 'https://api.proxyscrape.com/v3/free-proxy-list/get?request=displayproxies&proxy_type=http&timeout=5000&country=CA&ssl=all&anonymity=all',
+    country: 'CA',
+  },
+  {
+    name: 'proxyscrape AU 🇦🇺',
+    url: 'https://api.proxyscrape.com/v3/free-proxy-list/get?request=displayproxies&proxy_type=http&timeout=5000&country=AU&ssl=all&anonymity=all',
+    country: 'AU',
+  },
+  {
+    name: 'proxyscrape SE 🇸🇪',
+    url: 'https://api.proxyscrape.com/v3/free-proxy-list/get?request=displayproxies&proxy_type=http&timeout=5000&country=SE&ssl=all&anonymity=all',
+    country: 'SE',
+  },
+  {
+    name: 'proxyscrape DK 🇩🇰',
+    url: 'https://api.proxyscrape.com/v3/free-proxy-list/get?request=displayproxies&proxy_type=http&timeout=5000&country=DK&ssl=all&anonymity=all',
+    country: 'DK',
+  },
+
+  // ── Sumber volume tinggi baru ──────────────────────────────────────────────
+  {
+    // 1800+ proxies, online-checked, sering update
+    name: 'jetkai/proxy-list HTTP',
+    url: 'https://raw.githubusercontent.com/jetkai/proxy-list/main/online-proxies/txt/proxies-http.txt',
+  },
+  {
+    // 500+ proxies, fresh daily
+    name: 'vakhov/fresh-proxy-list',
+    url: 'https://raw.githubusercontent.com/vakhov/fresh-proxy-list/master/http.txt',
+  },
+  {
+    // 400+ proxies, aktif diupdate
+    name: 'almroot/proxylist',
+    url: 'https://raw.githubusercontent.com/almroot/proxylist/master/list.txt',
+  },
+  {
+    // 200+ proxies, sudah di-check (checked list = lebih banyak yang hidup)
+    name: 'elliottophellia/yakumo HTTP checked',
+    url: 'https://raw.githubusercontent.com/elliottophellia/yakumo/master/results/http/global/http_checked.txt',
+  },
+  {
+    // spys.me — 400 proxy, format: "IP:PORT CountryCode-..." → pakai regex parser
+    name: 'spys.me',
+    url: 'https://spys.me/proxy.txt',
+    parseMode: 'regex',
+  },
+  {
+    // geonode elite/anonymous — 90 proxy, format JSON → pakai json-geonode parser
+    name: 'geonode elite anonymous',
+    url: 'https://proxylist.geonode.com/api/proxy-list?limit=500&page=1&sort_by=lastChecked&sort_type=desc&filterUpTime=90&protocols=http,https&anonymityLevel=elite&anonymityLevel=anonymous',
+    parseMode: 'json-geonode',
+  },
 ];
 
 // ── Cache helpers ──────────────────────────────────────────────────────────────
@@ -192,10 +275,41 @@ function parseProxyLines(text: string): ProxyEntry[] {
   return out;
 }
 
-async function fetchSource(src: { name: string; url: string; country?: string }): Promise<ProxyEntry[]> {
+/** Ekstrak semua IP:PORT dari teks bebas via regex — cocok untuk spys.me dll */
+function parseProxyRegex(text: string): ProxyEntry[] {
+  const out: ProxyEntry[] = [];
+  const re = /\b(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}):(\d{2,5})\b/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(text)) !== null) {
+    const port = parseInt(m[2], 10);
+    if (port >= 80 && port <= 65535) out.push({ host: m[1], port });
+  }
+  return out;
+}
+
+/** Parse response JSON dari Geonode API — format: { data: [{ip, port}, ...] } */
+function parseGeonodeJson(text: string): ProxyEntry[] {
+  try {
+    const j = JSON.parse(text) as { data?: Array<{ ip: string; port: string }> };
+    if (!Array.isArray(j.data)) return [];
+    return j.data
+      .filter(p => p.ip && p.port)
+      .map(p => ({ host: p.ip, port: parseInt(p.port, 10) }))
+      .filter(p => !isNaN(p.port));
+  } catch {
+    return [];
+  }
+}
+
+async function fetchSource(src: { name: string; url: string; country?: string; parseMode?: 'lines' | 'regex' | 'json-geonode' }): Promise<ProxyEntry[]> {
   try {
     const text = await fetchText(src.url);
-    const list = parseProxyLines(text);
+    let list: ProxyEntry[];
+    switch (src.parseMode) {
+      case 'regex':        list = parseProxyRegex(text);   break;
+      case 'json-geonode': list = parseGeonodeJson(text);  break;
+      default:             list = parseProxyLines(text);   break;
+    }
     // Jika sumber sudah diketahui negaranya, pre-tag langsung (skip ip-api.com saat validasi)
     const tagged = src.country ? list.map(p => ({ ...p, country: src.country })) : list;
     logger.debug(`[ProxyService] ${src.name}: ${tagged.length} proxy${src.country ? ` [${src.country}]` : ''}`);
