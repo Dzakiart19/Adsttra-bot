@@ -35,8 +35,6 @@ LOOP_COOLDOWN_SEC = "0"
 LOOP_FOREVER = "true"
 PROXY_VALIDATE_CONCURRENCY = "40"
 SEARCH_ENGINE = "google"
-WEBSHARE_MAX_FAILURES = "10"
-WEBSHARE_PROXY_LIST = "31.59.20.176:6754:ntavlolm:s7qtewzztsrs,31.56.127.193:7684:ntavlolm:s7qtewzztsrs,45.38.107.97:6014:ntavlolm:s7qtewzztsrs,198.105.121.200:6462:ntavlolm:s7qtewzztsrs,64.137.96.74:6641:ntavlolm:s7qtewzztsrs,198.23.243.226:6361:ntavlolm:s7qtewzztsrs,142.111.67.146:5611:ntavlolm:s7qtewzztsrs"
 
 [workflows]
 runButton = "Project"
