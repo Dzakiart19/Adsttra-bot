@@ -134,9 +134,14 @@ src/
 - **`start.sh`** wajib digunakan sebagai run command (bukan `node dist/main.js` langsung) — berisi `LD_LIBRARY_PATH` yang benar untuk Chromium di Replit, set `PUPPETEER_CACHE_DIR`, dan auto-download Chrome jika belum ada
 - **Redis opsional** — tanpa Redis, bot fallback ke sequential lokal (mode `both`)
 - **`proxy_cache.json`** jangan di-commit (sudah ada di `.gitignore`) — TTL 6 jam
-- **Proxy pool** dibagi dua tier: `tier1[]` (US/GB/DE/NL/FR/FI/JP/KR) dan `other[]` — `next()` ambil 70% dari Tier 1
+- **Proxy pool** dibagi dua tier: `tier1[]` (US/GB/CA/AU/DE/NL/FR/SE/DK/FI/JP/KR/dll) dan `other[]` — `next()` ambil 70% dari Tier 1
 - **Proxy validation** dua jalur: HTTP GET ip-api.com (cek konektivitas + country); HTTPS CONNECT google.com:443 (wajib lolos keduanya)
-- **Background refresh** setiap 2 jam — fetch ulang 19 sumber, tambah proxy baru ke pool tanpa restart
+- **Background refresh** setiap 2 jam — fetch ulang semua sumber, tambah proxy baru ke pool tanpa restart
+- **Urutan sumber proxy** dioptimalkan untuk residential/ISP (bukan datacenter):
+  - **Grup 1** (diproses PERTAMA): proxyscrape + proxifly per-negara Tier 1 → masuk pool paling cepat
+  - **Grup 2** (quality-checked): geonode elite 90% uptime, yakumo pre-checked, jetkai online-checked, vakhov fresh
+  - **Grup 3** (medium): monosans, zevtyardt, clarketm, dll
+  - **Grup 4** (diproses TERAKHIR): pool jumbo semua negara (TheSpeedX, proxyscrape all) — dominan datacenter tapi residential yang lolos tetap masuk pool
 - **`proxyPoolSize`** di dashboard di-update tiap awal putaran (bukan hanya saat startup)
 - **`⚠ burnt`** di dashboard = warning informatif, bukan error — bot tetap retry otomatis
 - **`ip-api.com`** free tier limit 45 req/menit — dipakai untuk reputation check sebelum buka browser; `TrafficOrchestrator` TIDAK memanggil checkIP() ulang (sudah di-handle di `main.ts`)
