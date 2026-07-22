@@ -31,6 +31,10 @@ proxy_cache.json
 uptime_stats.json
 webshare_state.json
 
+# Nix environment paths — environment-specific, di-generate ulang oleh build command
+# start.sh membaca env.json (selalu fresh) atau .nix_env sebagai fallback
+.nix_env
+
 # Chrome binary — terlalu besar untuk GitHub (180MB+), auto-download oleh start.sh
 # Metadata folder boleh di-commit, tapi binary-nya tidak
 .puppeteer_cache/chrome-headless-shell/
