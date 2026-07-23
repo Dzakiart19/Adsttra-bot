@@ -36,11 +36,6 @@ const ConfigSchema = z.object({
   LOOP_COOLDOWN_SEC: z.coerce.number().int().min(0).default(0),
   // 0 = tidak ada target (loop sesuai LOOP_FOREVER). > 0 = stop otomatis setelah N sesi sukses.
   TARGET_IMPRESSIONS: z.coerce.number().int().min(0).default(0),
-  // Webshare.io proxy — format: host:port:user:pass,host:port:user:pass,...
-  // Kosong = fitur Webshare dinonaktifkan.
-  WEBSHARE_PROXY_LIST: z.string().default(''),
-  // Berapa kali gagal berturut sebelum dianggap limit bulanan.
-  WEBSHARE_MAX_FAILURES: z.coerce.number().int().positive().default(10),
 });
 
 export const Config = ConfigSchema.parse(process.env);
