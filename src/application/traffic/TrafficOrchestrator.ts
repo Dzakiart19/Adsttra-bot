@@ -187,32 +187,62 @@ export class TrafficOrchestrator {
         }
       }
 
-      // 4. Ad Warm-up: tunggu script iklan benar-benar initialize
+      // 4. Ad Warm-up: tunggu script iklan init + full-page scroll untuk trigger SEMUA iklan
       //
-      // KRITIS untuk impression count: Adsterra & ad network lain menggunakan
-      // pola deferred initialization — script mereka baru fire impression call
-      // setelah 2-6 detik via setTimeout() atau IntersectionObserver.
-      // Tanpa ini, bot sudah lanjut tapi impression XHR belum dikirim.
+      // KRITIS untuk impression count: Adsterra menggunakan IntersectionObserver —
+      // iklan HANYA dicatat saat elemen iklan masuk viewport untuk pertama kali.
+      // Dengan 10 ad unit di satu halaman, bot HARUS scroll melewati seluruh halaman
+      // agar semua 10 iklan mendapat kesempatan masuk viewport dan fire impression XHR.
       //
-      // Juga scroll untuk trigger below-fold ads yang pakai IntersectionObserver:
-      // ad hanya di-fetch dan dicatat saat masuk viewport pertama kali.
+      // Alur:
+      //   1. Tunggu 3s — beri waktu Adsterra script load & register observer
+      //   2. Full-page sweep turun — scroll viewport-by-viewport, pause tiap step
+      //      agar IntersectionObserver punya waktu callback & kirim impression
+      //   3. Scroll kembali ke atas perlahan — trigger observer kedua kali (beberapa
+      //      ad network hitung ulang jika keluar-masuk viewport)
       {
-        const warmupMs = Math.floor(Math.random() * 3000) + 5000; // 5–8 detik
-        StateService.update({ action: `Ad warm-up: menunggu script iklan init (${(warmupMs/1000).toFixed(1)}s)...` });
-        logger.debug(`Ad warm-up: ${warmupMs}ms`);
-        await this.engine.wait(warmupMs);
+        StateService.update({ action: 'Ad warm-up: menunggu Adsterra script init (3s)...' });
+        await this.engine.wait(3000);
 
-        // Scroll bertahap untuk trigger IntersectionObserver (above + below fold)
         try {
-          await this.engine.scroll(0, 200);
-          await this.engine.wait(700);
-          await this.engine.scroll(0, 300);
+          // Ambil tinggi halaman dan viewport dari browser
+          const pageInfo: { scrollHeight: number; viewportHeight: number } = await this.engine.evaluate(() => ({
+            scrollHeight: Math.max(document.body.scrollHeight, document.documentElement.scrollHeight),
+            viewportHeight: window.innerHeight,
+          }));
+
+          const { scrollHeight, viewportHeight } = pageInfo;
+          // Scroll dalam chunk ~60% viewport agar setiap elemen punya overlap antar langkah
+          const chunkSize = Math.floor(viewportHeight * 0.6);
+          // Estimasi jumlah langkah untuk cover seluruh halaman
+          const totalSteps = Math.ceil(scrollHeight / chunkSize);
+
+          logger.debug(`Ad warm-up full-page sweep: pageHeight=${scrollHeight} viewportH=${viewportHeight} steps=${totalSteps} chunkSize=${chunkSize}`);
+          StateService.update({ action: `Ad warm-up: full-page sweep ${totalSteps} langkah untuk trigger semua ${10} iklan...` });
+
+          // ── Sweep turun: top → bottom ──────────────────────────────────────────
+          for (let step = 0; step < totalSteps; step++) {
+            await this.engine.scroll(0, chunkSize);
+            // Pause 700–1100ms per langkah — cukup lama untuk IntersectionObserver callback
+            const pauseMs = Math.floor(Math.random() * 400) + 700;
+            await this.engine.wait(pauseMs);
+          }
+
+          // Tahan di bawah halaman 1.5s — iklan paling bawah butuh waktu extra
+          await this.engine.wait(1500);
+
+          // ── Sweep naik: bottom → top (lebih lambat, natural) ──────────────────
+          const upSteps = Math.ceil(totalSteps * 0.6); // tidak perlu balik 100%, cukup ke tengah
+          for (let step = 0; step < upSteps; step++) {
+            await this.engine.scroll(0, -chunkSize);
+            await this.engine.wait(Math.floor(Math.random() * 300) + 500);
+          }
+
+          // Kembali ke posisi atas (scroll to top)
+          await this.engine.evaluate(() => { window.scrollTo({ top: 0, behavior: 'smooth' }); });
           await this.engine.wait(800);
-          await this.engine.scroll(0, 250);
-          await this.engine.wait(600);
-          await this.engine.scroll(0, -200); // kembali ke atas sedikit
-          await this.engine.wait(500);
-        } catch { /* scroll gagal (non-scrollable page), abaikan */ }
+
+        } catch { /* scroll error (page crash / non-scrollable), abaikan */ }
       }
 
       // 4. Dwell time di URL target
