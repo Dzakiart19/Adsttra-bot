@@ -14,6 +14,7 @@
 import * as http  from 'http';
 import * as https from 'https';
 import * as net   from 'net';
+import * as tls   from 'tls';
 import * as fs    from 'fs';
 import * as path  from 'path';
 import { logger } from '../logging/logger';
@@ -276,16 +277,85 @@ function testHttpsConnect(proxy: ProxyEntry): Promise<boolean> {
 }
 
 /**
- * Validasi proxy dua tahap:
- * 1. HTTP GET ip-api.com → cek konektivitas + dapat country
- * 2. HTTPS CONNECT google.com:443 → cek dukungan HTTPS tunneling (wajib untuk target HTTPS)
- * Proxy lolos hanya jika KEDUA tahap berhasil.
+ * Tahap 3 (opsional): Test HTTPS ke target site lewat proxy.
+ * Tujuan: filter proxy yang pasti kena "Anonymous Proxy detected." sebelum masuk pool.
+ * Jalankan CONNECT tunnel → TLS handshake → GET / → cek body untuk pola blokir.
+ * Optimistic on TLS/network error (biarkan real session yang putuskan).
  */
-async function validateProxy(proxy: ProxyEntry): Promise<{ ok: boolean; country?: string }> {
+function testTargetSiteViaProxy(proxy: ProxyEntry, targetHost: string): Promise<boolean> {
+  const BLOCK_PATTERNS = [
+    /anonymous proxy detected/i,
+    /proxy detected/i,
+    /vpn detected/i,
+    /your ip.*blocked/i,
+    /ip.*has been blocked/i,
+  ];
+  return new Promise((resolve) => {
+    let settled = false;
+    const finish = (ok: boolean) => { if (!settled) { settled = true; resolve(ok); } };
+
+    try {
+      const socket = net.connect({ host: proxy.host, port: proxy.port }, () => {
+        socket.write(
+          `CONNECT ${targetHost}:443 HTTP/1.1\r\nHost: ${targetHost}:443\r\nProxy-Connection: keep-alive\r\n\r\n`
+        );
+      });
+      socket.setTimeout(6000);
+      socket.on('error', () => finish(false));
+      socket.on('timeout', () => { socket.destroy(); finish(false); });
+
+      socket.once('data', (connectBuf: Buffer) => {
+        const firstLine = connectBuf.toString().split('\r\n')[0];
+        if (!firstLine.includes('200')) { socket.destroy(); finish(false); return; }
+
+        // Tunnel established — upgrade ke TLS
+        socket.removeAllListeners('timeout');
+        const tlsSock = tls.connect({ socket, servername: targetHost, rejectUnauthorized: false });
+        tlsSock.setTimeout(5000);
+
+        tlsSock.on('secureConnect', () => {
+          tlsSock.write(
+            `GET / HTTP/1.1\r\nHost: ${targetHost}\r\n` +
+            `User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36\r\n` +
+            `Accept: text/html\r\nConnection: close\r\n\r\n`
+          );
+        });
+
+        let response = '';
+        tlsSock.on('data', (d: Buffer) => {
+          response += d.toString();
+          if (response.length > 800) {
+            tlsSock.destroy();
+            finish(!BLOCK_PATTERNS.some(re => re.test(response)));
+          }
+        });
+        tlsSock.on('end', () => {
+          if (!settled) finish(!BLOCK_PATTERNS.some(re => re.test(response)));
+        });
+        // TLS error → optimistic (biarkan real session yang putuskan)
+        tlsSock.on('error', () => { if (!settled) finish(true); });
+        tlsSock.on('timeout', () => { tlsSock.destroy(); if (!settled) finish(true); });
+      });
+    } catch { finish(false); }
+  });
+}
+
+/**
+ * Validasi proxy tiga tahap:
+ * 1. HTTP GET ip-api.com → cek konektivitas + dapat country
+ * 2. HTTPS CONNECT google.com:443 → cek dukungan HTTPS tunneling
+ * 3. (Opsional) HTTPS ke target site → filter proxy yang pasti kena blokir
+ * Proxy lolos hanya jika SEMUA tahap berhasil.
+ */
+async function validateProxy(proxy: ProxyEntry, targetHost?: string): Promise<{ ok: boolean; country?: string }> {
   const httpResult = await validateProxyFull(proxy);
   if (!httpResult.ok) return { ok: false };
   const httpsOk = await testHttpsConnect(proxy);
   if (!httpsOk) return { ok: false };
+  if (targetHost) {
+    const targetOk = await testTargetSiteViaProxy(proxy, targetHost);
+    if (!targetOk) return { ok: false };
+  }
   return { ok: true, country: httpResult.country };
 }
 
@@ -302,11 +372,31 @@ export class ProxyService {
   private other:       ProxyEntry[] = [];   // proxies dari negara lain
   private cursor1:     number       = 0;
   private cursorOther: number       = 0;
+  private blacklisted  = new Set<string>(); // runtime blacklist — proxy yang diblok target site
 
   private get pool(): ProxyEntry[] { return [...this.tier1, ...this.other]; }
   private addToPool(entry: ProxyEntry): void {
+    const key = `${entry.host}:${entry.port}`;
+    if (this.blacklisted.has(key)) return; // jangan tambah proxy yang sudah di-blacklist
     if (isTier1(entry.country)) this.tier1.push(entry);
     else                        this.other.push(entry);
+  }
+
+  /**
+   * Blacklist proxy secara permanent untuk sesi ini.
+   * Panggil saat target site mengembalikan "Anonymous Proxy detected."
+   * Proxy dihapus dari pool dan tidak akan di-tambah ulang.
+   */
+  blacklistProxy(host: string, port: number): void {
+    const key = `${host}:${port}`;
+    if (this.blacklisted.has(key)) return;
+    this.blacklisted.add(key);
+    const before = this.size;
+    this.tier1 = this.tier1.filter(p => `${p.host}:${p.port}` !== key);
+    this.other = this.other.filter(p => `${p.host}:${p.port}` !== key);
+    if (this.size < before) {
+      logger.debug(`[ProxyService] Blacklisted ${key} (target site block) — pool: ${this.size}`);
+    }
   }
 
   /**
@@ -320,7 +410,7 @@ export class ProxyService {
    *     - Flush JSON setiap FLUSH_BATCH proxy baru ATAU setiap FLUSH_INTERVAL_MS.
    *     - Flush final saat semua selesai.
    */
-  async load(concurrency = 40): Promise<void> {
+  async load(concurrency = 40, targetHost?: string): Promise<void> {
     // ── Fast path: cache segar ─────────────────────────────────────────────────
     const cache = loadCache();
     if (cache && Date.now() - cache.savedAt < CACHE_TTL_MS) {
@@ -361,6 +451,9 @@ export class ProxyService {
       let lastFlushTime  = Date.now();
       let checked        = 0;
       const queue        = [...unique];
+      if (targetHost) {
+        logger.info(`[ProxyService] Target-site probe aktif: akan test HTTPS ke ${targetHost} (tahap 3)`);
+      }
 
       const flush = () => {
         saveCache(this.pool);
@@ -377,7 +470,7 @@ export class ProxyService {
       const worker = async () => {
         while (queue.length > 0) {
           const proxy          = queue.shift()!;
-          const { ok, country } = await validateProxy(proxy);
+          const { ok, country } = await validateProxy(proxy, targetHost);
           checked++;
 
           if (ok) {
@@ -437,6 +530,7 @@ export class ProxyService {
     intervalMs = 2 * 60 * 60 * 1000,
     concurrency = 60,
     onNewProxies?: (size: number) => void,
+    targetHost?: string,
   ): void {
     const doRefresh = async () => {
       logger.info('[ProxyService] 🔄 Background refresh — mengambil proxy baru dari semua sumber...');
@@ -460,7 +554,7 @@ export class ProxyService {
         const worker = async () => {
           while (queue.length > 0) {
             const proxy           = queue.shift()!;
-            const { ok, country } = await validateProxy(proxy);
+            const { ok, country } = await validateProxy(proxy, targetHost);
             if (ok) {
               const key   = `${proxy.host}:${proxy.port}`;
               const exists = this.pool.some(p => `${p.host}:${p.port}` === key);

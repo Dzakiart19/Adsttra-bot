@@ -58,10 +58,12 @@ async function runWorker(proxyPool?: ProxyService) {
         const p = proxyPool.next()!;
         const proxyStr = `${p.host}:${p.port}`;
 
-        // ── Reputation pre-check: skip burnt proxy sebelum buka browser ──
+        // ── Reputation pre-check: skip datacenter/VPN proxy sebelum buka browser ──
+        // Catatan: hanya block hosting/VPN (datacenter jelas); proxy:true residential
+        // dibiarkan lolos — sudah difilter oleh target-site probe saat validasi.
         const rep = await ReputationService.checkIP(proxyStr);
-        if (rep && (rep.vpn || rep.hosting || rep.proxy)) {
-          const reason = rep.vpn ? 'VPN' : rep.hosting ? 'hosting/datacenter' : 'proxy terdeteksi';
+        if (rep && (rep.hosting || rep.vpn)) {
+          const reason = rep.vpn ? 'VPN' : 'hosting/datacenter';
           StateService.update({ proxyRetries: StateService.getState().proxyRetries + 1, proxyBurnt: true, action: `⚠ Worker burnt (${reason}) ${proxyStr} — skip` });
           logger.warn(`Worker: Proxy burnt (${reason}) — skip tanpa buka browser (${proxyStr})`);
           continue;
@@ -90,6 +92,10 @@ async function runWorker(proxyPool?: ProxyService) {
           err.message.includes('Session closed')
         );
         if (isProxyErr && proxyPool && proxyPool.size > 0 && attempt < MAX_PROXY_RETRIES - 1) {
+          // Blacklist jika target site yang memblok
+          if (err.message?.includes('Anonymous Proxy detected') || err.message?.includes('ERR_PROXY')) {
+            proxyPool.blacklistProxy(p.host, p.port);
+          }
           StateService.update({ proxyRetries: StateService.getState().proxyRetries + 1 });
           logger.warn(`Worker: Proxy gagal, coba berikutnya...`);
         } else {
@@ -133,13 +139,21 @@ async function bootstrap() {
   if (Config.USE_FREE_PROXIES) {
     StateService.update({ status: 'loading_proxies', action: 'Memuat dan memvalidasi proxy pool...' });
     proxyPool = new ProxyService();
-    await proxyPool.load(Config.PROXY_VALIDATE_CONCURRENCY);
+
+    // Ekstrak hostname target untuk target-site probe (tahap 3 validasi)
+    let targetHostForValidation: string | undefined;
+    try { targetHostForValidation = new URL(Config.DEFAULT_URL).hostname; } catch { /* abaikan */ }
+    if (targetHostForValidation) {
+      logger.info(`[Bootstrap] Target-site probe akan test ke: ${targetHostForValidation}`);
+    }
+
+    await proxyPool.load(Config.PROXY_VALIDATE_CONCURRENCY, targetHostForValidation);
     StateService.update({ proxyPoolSize: proxyPool.size, action: `Proxy pool siap: ${proxyPool.size} proxy valid` });
 
     // Background refresh setiap 2 jam — fetch ulang semua sumber, tambah proxy baru
     proxyPool.startBackgroundRefresh(2 * 60 * 60 * 1000, 60, (newSize) => {
       StateService.update({ proxyPoolSize: newSize });
-    });
+    }, targetHostForValidation);
   }
 
   // Load Webshare proxy service (prioritas utama, tanpa reputation check)
@@ -272,7 +286,9 @@ async function bootstrap() {
               const p = proxyPool!.next()!;
               const proxyStr = `${p.host}:${p.port}`;
 
-              // ── Reputation pre-check: skip burnt proxy sebelum buka browser ──
+              // ── Reputation pre-check: skip datacenter/VPN proxy sebelum buka browser ──
+              // Hanya block hosting/VPN; proxy:true residential dibiarkan lolos —
+              // sudah difilter oleh target-site probe saat validasi.
               StateService.update({
                 sessionIndex: i, attempt, maxAttempts: MAX_PROXY_RETRIES + 1,
                 proxy: proxyStr, proxyBurnt: false, targetUrl: Config.DEFAULT_URL,
@@ -280,8 +296,8 @@ async function bootstrap() {
                 action: `Cek reputasi proxy ${proxyStr}...`,
               });
               const rep = await ReputationService.checkIP(proxyStr);
-              if (rep && (rep.vpn || rep.hosting || rep.proxy)) {
-                const reason = rep.vpn ? 'VPN' : rep.hosting ? 'hosting/datacenter' : 'proxy terdeteksi';
+              if (rep && (rep.hosting || rep.vpn)) {
+                const reason = rep.vpn ? 'VPN' : 'hosting/datacenter';
                 StateService.update({ proxyBurnt: true, proxyRetries: StateService.getState().proxyRetries + 1, action: `⚠ Burnt (${reason}) ${proxyStr} — skip` });
                 logger.warn(`[R${round}·S${i+1}] Proxy burnt (${reason}) — skip tanpa buka browser (${proxyStr})`);
                 continue;
@@ -362,6 +378,10 @@ async function bootstrap() {
                   break; // keluar dari proxy retry loop — ganti proxy tidak akan membantu
                 } else {
                   // ── Error proxy biasa — coba proxy berikutnya ───────────────
+                  // Blacklist jika target site yang memblok (jangan re-attempt di sesi lain)
+                  if (msg.includes('Anonymous Proxy detected') || msg.includes('ERR_PROXY')) {
+                    proxyPool?.blacklistProxy(p.host, p.port);
+                  }
                   StateService.update({ proxyRetries: StateService.getState().proxyRetries + 1, step: 0 });
                   logger.warn(`[R${round}·S${i+1}] Proxy ${proxyStr} gagal (${msg.split('\n')[0] ?? 'unknown'}), coba berikutnya...`);
                 }
