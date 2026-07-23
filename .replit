@@ -35,6 +35,7 @@ LOOP_COOLDOWN_SEC = "0"
 LOOP_FOREVER = "true"
 PROXY_VALIDATE_CONCURRENCY = "40"
 SEARCH_ENGINE = "google"
+URL = "https://dramacina--dzeckart.replit.app"
 
 [workflows]
 runButton = "Project"
