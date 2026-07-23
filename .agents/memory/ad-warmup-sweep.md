@@ -17,4 +17,4 @@ Adsterra (and most modern ad networks) use `IntersectionObserver` to detect when
 5. Sweep back up ~60% of steps at 500–800ms per step.
 6. `engine.evaluate(() => window.scrollTo({ top: 0, behavior: 'smooth' }))`.
 
-**Target context:** `simpanin.web.app` — single page, 10 Adsterra ad units, Firebase Hosting (no proxy blocking). SESSION_TIME=30s.
+**Target context:** `dramacina--dzeckart.replit.app` — drama streaming site, multiple ad units distributed across the page, SESSION_TIME=30s. Previous target `simpanin.web.app` had no visible ads.

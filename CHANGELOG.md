@@ -4,6 +4,33 @@ Semua perubahan penting pada project ini didokumentasikan di sini.
 
 ---
 
+## [2.11.0] - 2026-07-23
+
+### Changed
+
+- **URL target diganti ke `dramacina--dzeckart.replit.app`**: Site streaming drama Asia (DramainAja) dipilih menggantikan `simpanin.web.app` karena memiliki iklan nyata (Adsterra) yang terlihat di halaman, banyak ad unit tersebar di seluruh halaman, dan banyak internal link untuk contextual clicking. `simpanin.web.app` tidak memiliki iklan sehingga bot berjalan tanpa menghasilkan impression apapun.
+
+- **Dashboard mobile-friendly** (`DashboardServer.ts`): Redesign penuh antarmuka dashboard. Layout lama tidak responsif (mode desktop di semua layar). Kini menggunakan CSS Grid responsif — 3 kolom di mobile, `auto-fit` di desktop. Font size dan padding adaptif via `@media(min-width:600px)`. Kotak "⚡ Aksi Bot Sekarang" ditonjolkan dengan background berbeda, teks bold, dan warna `#e0f7fa` agar langsung terbaca di semua ukuran layar.
+
+### Added
+
+- **Real-time action text di `BehaviorService`** (`BehaviorService.ts`): Setiap aksi simulasi kini memanggil `StateService.update({ action: '...' })` sebelum eksekusi, sehingga dashboard menampilkan apa yang sebenarnya sedang dilakukan bot:
+  - Scroll: `📜 Scroll ↓ 340px`
+  - Mouse move: `🖱️ Gerakkan mouse ke (872, 441)`
+  - Reading pause: `📖 Membaca konten halaman... (3.2s)`
+  - Micro-wait: `⏸ Jeda sejenak... (420ms)`
+
+- **Real-time action text granular di `TrafficOrchestrator`**: Action text lebih deskriptif di setiap fase sesi:
+  - `🚀 Meluncurkan browser stealth mode...`
+  - `🌐 Membuka halaman: https://...` lalu `✅ Halaman target berhasil dimuat`
+  - `⏳ Menunggu script iklan selesai load (3s)...`
+  - Per-step ad warm-up: `📺 Ad warm-up ↓ step X/N — memicu IntersectionObserver iklan...`
+  - Per-step sweep naik: `📺 Ad warm-up ↑ kembali ke atas (X/Y)`
+  - `✅ Ad warm-up selesai — semua iklan telah di-trigger`
+  - Proxy block: `🚫 Proxy diblok oleh target site — ganti proxy...`
+
+---
+
 ## [2.10.0] - 2026-07-23
 
 ### Fixed

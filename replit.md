@@ -50,7 +50,7 @@ npm start          # jalankan dari dist/
 
 | Variable | Nilai Aktif | Keterangan |
 |---|---|---|
-| `DEFAULT_URL` | `https://simpanin.web.app` | Halaman target dengan 10 Adsterra ad unit |
+| `URL` | `https://dramacina--dzeckart.replit.app` | Site drama streaming dengan banyak ad unit |
 | `MAX_SESSIONS` | `5` | 5 sesi per putaran (sequential, tanpa Redis) |
 | `SESSION_TIME` | `30` | 30 detik per sesi — cukup untuk full-page sweep + dwell + semua iklan terindeks |
 | `LOOP_FOREVER` | `true` | Loop terus-menerus tanpa henti |
@@ -90,9 +90,12 @@ Gunakan layanan gratis seperti [cron-job.org](https://cron-job.org).
 ## Live Dashboard
 
 Buka URL preview Replit → port 3000:
-- `/` — Dashboard real-time (SSE)
+- `/` — Dashboard real-time (SSE) — **mobile-friendly**, responsif di HP dan desktop
 - `/health` — JSON status (untuk cronjob/uptime monitor)
 - `/events` — SSE stream langsung
+
+Dashboard menampilkan kotak **"⚡ Aksi Bot Sekarang"** yang update real-time setiap langkah:
+`🌐 Membuka halaman...` → `⏳ Menunggu script iklan...` → `📺 Ad warm-up ↓ step 3/12...` → `📜 Scroll ↓ 340px` → `🖱️ Gerakkan mouse ke (X, Y)` → `📖 Membaca konten...`
 
 ---
 
@@ -127,7 +130,7 @@ src/
 - **Proxy validation 3 tahap** (hemat quota ip-api.com):
   1. **HTTPS CONNECT** `google.com:443` — murah, tanpa API; filter ~70% proxy
   2. **ip-api.com via proxy** — dapat country + filter `hosting`/`VPN`/`datacenter` (di-skip jika sumber sudah tag country)
-  3. **Target-site probe** (HTTPS ke `simpanin.web.app`) — Firebase tidak block proxy → hampir semua lolos → pool besar
+  3. **Target-site probe** (HTTPS ke `dramacina--dzeckart.replit.app`) — cek apakah proxy kena blokir sebelum masuk pool
 - **Background refresh** setiap 2 jam — fetch ulang semua sumber, tambah proxy baru ke pool tanpa restart
 - **Sumber proxy aktif** (12 sumber, Tier 1 country-specific di urutan atas agar pool terisi duluan):
   - 🇺🇸 proxyscrape US · 🇬🇧 GB · 🇨🇦 CA · 🇦🇺 AU · 🇫🇷 FR · 🇸🇪 SE · 🇳🇱 NL · 🇩🇪 DE · 🇯🇵 JP
@@ -142,6 +145,8 @@ src/
 - **Dwell time akurat** — `elapsedBeforeDwell` dikurangi dari `durationMs` agar total sesi tidak melebihi konfigurasi
 - **SSE heartbeat** setiap 30 detik — bersihkan client yang hang
 - **Webshare dihapus** — `WebshareProxyService.ts` dan config `WEBSHARE_PROXY_LIST`/`WEBSHARE_MAX_FAILURES` tidak ada lagi
+- **BehaviorService sekarang emit StateService** — setiap aksi (scroll, mouse move, reading pause, micro-wait) langsung terupdate di dashboard real-time; tidak perlu logger.debug lagi untuk tracking
+- **Dashboard mobile-friendly** — grid responsif 3 kolom di HP, auto-fit di desktop; kotak aksi bot ditonjolkan dengan font bold
 
 ---
 
@@ -150,6 +155,10 @@ src/
 | # | File | Perubahan | Status |
 |---|---|---|---|
 | 1 | `UserAgentService.ts` | NULL deref jika file UA kosong → crash | ✅ Fixed |
+| 19 | `BehaviorService.ts` | Tambah `StateService.update()` di setiap aksi — scroll/mouse/reading/pause real-time di dashboard | ✅ Added |
+| 20 | `TrafficOrchestrator.ts` | Action text lebih granular — per-step ad warm-up, open browser, navigate, proxy block | ✅ Improved |
+| 21 | `DashboardServer.ts` | Full mobile-responsive redesign — grid 3 kolom HP, kotak aksi ditonjolkan, font adaptif | ✅ Redesigned |
+| 22 | Env vars | `URL` diganti ke `dramacina--dzeckart.replit.app` — site streaming lebih banyak ad unit | ✅ Updated |
 | 2 | `ReputationService.ts` | Cache tanpa TTL — proxy berubah reputasi tidak pernah di-recheck | ✅ Fixed |
 | 3 | `TrafficOrchestrator.ts` | Fire-and-forget `checkIP()` tanpa await — race condition | ✅ Fixed |
 | 4 | `TrafficOrchestrator.ts` | Duration drift — warmup + navigate tidak dikurangi dari dwell time | ✅ Fixed |
@@ -164,7 +173,7 @@ src/
 | 13 | `WebshareProxyService.ts` | Hapus seluruh fitur Webshare — tidak digunakan | ✅ Removed |
 | 14 | `config.ts` | Hapus `WEBSHARE_PROXY_LIST` + `WEBSHARE_MAX_FAILURES` dari schema | ✅ Removed |
 | 15 | `TrafficOrchestrator.ts` | Ad warm-up: ganti scroll fixed 550px → full-page sweep per 60% viewport | ✅ Improved |
-| 16 | Env vars | `DEFAULT_URL` → `simpanin.web.app`, `SESSION_TIME` → `30`, tambah `REFERRER_POOL` | ✅ Updated |
+| 16 | Env vars | `DEFAULT_URL` → `dramacina--dzeckart.replit.app`, `SESSION_TIME` → `30`, tambah `REFERRER_POOL` | ✅ Updated |
 | 17 | `ProxyService.ts` | Tambah 6 sumber country-specific Tier 1 (US/GB/CA/AU/FR/SE) di urutan atas | ✅ Added |
 | 18 | `ProxyService.ts` | Naikkan rasio Tier 1 dari 70% → 95% untuk maksimalkan CPM | ✅ Updated |
 
@@ -179,3 +188,5 @@ src/
 - `SESSION_TIME` dalam satuan **detik** — aktif `30` untuk halaman Adsterra multi-unit
 - Tidak ada cooldown antar putaran (`LOOP_COOLDOWN_SEC=0`)
 - Tidak menggunakan Webshare — hanya free proxy scraped pool
+- Dashboard harus mobile-friendly dan menampilkan aksi bot real-time di kotak "⚡ Aksi Bot Sekarang"
+- URL target aktif: `https://dramacina--dzeckart.replit.app` (site drama streaming)

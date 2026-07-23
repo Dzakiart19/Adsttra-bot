@@ -25,17 +25,19 @@ Pool referrer default mencakup: `Facebook`, `Instagram`, `X / Twitter`, `TikTok`
 **Efek**: Di Google Analytics / server log target, kunjungan terlihat *datang dari* platform tersebut. Bukan direct traffic.
 
 ### 3. Buka URL Target
-`page.goto(url, { waitUntil: 'networkidle2' })` — bot tunggu semua asset selesai dimuat sebelum lanjut.
+`page.goto(url, { waitUntil: 'load' })` — bot tunggu event load selesai lalu lanjut (bukan `networkidle2` karena ad-heavy site terus-menerus ping tracking server sehingga networkidle2 tidak pernah tercapai → timeout 60s).
 
-### 4. Diam di Halaman ~10 Detik — Sambil Aktif
+### 4. Diam di Halaman Selama Durasi Sesi — Sambil Aktif
 Selama durasi sesi, `BehaviorService` loop terus-menerus memilih aksi acak:
 
-| Aksi | Probabilitas (medium) | Detail |
-|---|---|---|
-| **Scroll** | 25% | Atas/bawah, 100–400px, dipecah 5 langkah halus dengan delay antar langkah |
-| **Mouse Move** | 25% | Gerak ke koordinat X,Y acak dalam viewport |
-| **Reading Pause** | 30% | Diam 2–5 detik + micro-jitter mouse ±5px (simulasi mata membaca) |
-| **Micro-wait** | 20% | Idle singkat 100–600ms |
+| Aksi | Probabilitas (medium) | Detail | Dashboard Real-time |
+|---|---|---|---|
+| **Scroll** | 25% | Atas/bawah, 100–400px, dipecah 5 langkah halus dengan delay antar langkah | `📜 Scroll ↓ 340px` |
+| **Mouse Move** | 25% | Gerak ke koordinat X,Y acak dalam viewport | `🖱️ Gerakkan mouse ke (872, 441)` |
+| **Reading Pause** | 30% | Diam 2–5 detik + micro-jitter mouse ±5px (simulasi mata membaca) | `📖 Membaca konten halaman... (3.2s)` |
+| **Micro-wait** | 20% | Idle singkat 100–600ms | `⏸ Jeda sejenak... (420ms)` |
+
+Setiap aksi update dashboard **real-time** via `StateService` — teks langsung muncul di kotak "⚡ Aksi Bot Sekarang".
 
 ### 5. Contextual Click (Di Akhir Sesi)
 Bot evaluasi semua link `<a>` di halaman, beri skor, klik satu:
@@ -128,8 +130,6 @@ Salin `.env.example` dan sesuaikan, atau set langsung di tab Secrets Replit.
 | `SEARCH_PAGES_LIMIT`         | `1`                        | Maksimal halaman hasil pencarian yang ditelusuri (1–10)           |
 | `REFERRER_POOL`              | -                          | Referrer custom, pisah koma                                       |
 | `MATCH_GEOLOCATION`          | `false`                    | Sinkronkan geolokasi browser dengan IP proxy                      |
-| `WEBSHARE_PROXY_LIST`        | -                          | Daftar proxy Webshare format `host:port:user:pass,...` (prioritas utama) |
-| `WEBSHARE_MAX_FAILURES`      | `10`                       | Gagal berturut sebelum fallback permanen ke scraped proxies       |
 | `TARGET_IMPRESSIONS`         | `0`                        | Stop otomatis setelah N sesi sukses. `0` = tidak ada target       |
 | `LOG_LEVEL`                  | `info`                     | Level log: `error`, `warn`, `info`, `debug`                       |
 | `NODE_ENV`                   | `development`              | Environment: `development`, `production`, `test`                  |
@@ -145,10 +145,10 @@ Bot mendukung tiga mode proxy:
 ### 1. Free Proxy Pool (Otomatis)
 
 Set `USE_FREE_PROXIES=true`. Bot akan:
-1. Scrape proxy dari **6 sumber publik** (diurutkan pass rate tertinggi → terendah)
+1. Scrape proxy dari **12 sumber** (9 country-specific Tier 1 + 3 global volume)
 2. Validasi **3 tahap** secara concurrent — hanya proxy lolos semua tahap yang masuk pool
 3. Pool dibagi dua: **Tier 1** (US, GB, CA, AU, DE, NL, FR, SE, JP, KR, …) dan **Other**
-4. `next()` mengambil **70% dari Tier 1**, 30% dari Other
+4. `next()` mengambil **95% dari Tier 1**, 5% dari Other — maksimalkan CPM
 5. Simpan ke `proxy_cache.json` (TTL 6 jam) — restart berikutnya langsung pakai cache
 6. **Background refresh setiap 2 jam** — fetch ulang semua sumber, tambah proxy baru ke pool (tanpa restart)
 
@@ -157,16 +157,22 @@ USE_FREE_PROXIES=true
 PROXY_VALIDATE_CONCURRENCY=40
 ```
 
-**Sumber proxy** (diurutkan berdasarkan pass rate live test, 2026-07-22):
+**Sumber proxy** (12 sumber aktif, Tier 1 country-specific di urutan atas untuk mengisi pool lebih cepat):
 
-| Sumber | Pass Rate | Keterangan |
-|--------|-----------|------------|
-| yakumo pre-checked | ~50% | Pre-validated list — hanya proxy yang respond saat list dibuat |
-| monosans/proxy-list HTTP | ~33% | Latency cepat (~375ms avg) |
-| proxyscrape NL 🇳🇱 | ~33% | Country-tagged, skip ip-api.com untuk detect country |
-| proxyscrape DE 🇩🇪 | ~33% | Country-tagged |
-| proxyscrape JP 🇯🇵 | ~17% | Latency sangat cepat (~363ms avg) |
-| TheSpeedX/PROXY-List | ~17% | Volume besar, ada residential GB |
+| Sumber | Pass Rate | Tier | Keterangan |
+|--------|-----------|------|------------|
+| proxyscrape US 🇺🇸 | — | Tier 1 | CPM tertinggi, country-tagged |
+| proxyscrape GB 🇬🇧 | — | Tier 1 | Country-tagged |
+| proxyscrape CA 🇨🇦 | — | Tier 1 | Country-tagged |
+| proxyscrape AU 🇦🇺 | — | Tier 1 | Country-tagged |
+| proxyscrape FR 🇫🇷 | — | Tier 1 | Country-tagged |
+| proxyscrape SE 🇸🇪 | — | Tier 1 | Country-tagged |
+| proxyscrape NL 🇳🇱 | ~33% | Tier 1 | Country-tagged |
+| proxyscrape DE 🇩🇪 | ~33% | Tier 1 | Country-tagged |
+| proxyscrape JP 🇯🇵 | ~17% | Tier 1 | Latency sangat cepat |
+| yakumo pre-checked | ~50% | Mix | Pre-validated list terbaik |
+| monosans/proxy-list HTTP | ~33% | Mix | Latency cepat (~375ms avg) |
+| TheSpeedX/PROXY-List | ~17% | Mix | Volume besar, ada residential GB |
 
 **Validasi 3 tahap** (dioptimalkan untuk hemat quota ip-api.com):
 
@@ -252,13 +258,22 @@ Setiap sesi membaca/menulis ke direktori profilnya sendiri (`sessions/session-0`
 
 ## Live Dashboard
 
-HTTP server berjalan di `PORT` (default 3000):
+HTTP server berjalan di `PORT` (default 3000). **Mobile-friendly** — responsif di HP dan desktop.
 
 | Endpoint | Keterangan |
 |---|---|
-| `GET /` | Dashboard HTML — monitoring real-time via Server-Sent Events |
+| `GET /` | Dashboard HTML — monitoring real-time via Server-Sent Events, mobile-friendly |
 | `GET /events` | SSE stream — push state ke browser tiap ada update |
 | `GET /health` | JSON status — cocok untuk cronjob/uptime monitor |
+
+Dashboard menampilkan kotak **"⚡ Aksi Bot Sekarang"** yang terupdate setiap langkah secara real-time:
+- `🚀 Meluncurkan browser stealth mode...`
+- `🌐 Membuka halaman: https://dramacina--dzeckart.replit.app`
+- `✅ Halaman target berhasil dimuat`
+- `⏳ Menunggu script iklan selesai load (3s)...`
+- `📺 Ad warm-up ↓ step 4/12 — memicu IntersectionObserver iklan...`
+- `📜 Scroll ↓ 340px` / `🖱️ Gerakkan mouse ke (872, 441)` / `📖 Membaca konten halaman... (3.2s)`
+- `🖱️ Klik: "About Drama" → https://dramacina--dzeckart.replit.app/about`
 
 ```json
 // GET /health
@@ -305,12 +320,11 @@ src/
     ├── browser/
     │   ├── PuppeteerStealthEngine.ts   # Engine Puppeteer + stealth plugin
     │   ├── FingerprintService.ts       # Generate + inject fingerprint spoofing script
-    │   ├── BehaviorService.ts          # Simulasi scroll, mouse, reading pause
+    │   ├── BehaviorService.ts          # Simulasi scroll, mouse, reading pause — emit StateService real-time per aksi
     │   ├── UserAgentService.ts         # Rotasi UA dari useragent/most-common.json
     │   └── ReferrerService.ts          # Manajemen referrer + search engine homepage
     ├── proxy/
-    │   ├── ProxyService.ts             # Scrape, validasi 3-tahap streaming, cache proxy
-    │   └── WebshareProxyService.ts     # Webshare premium proxy (prioritas utama)
+    │   ├── ProxyService.ts             # Scrape, validasi 3-tahap streaming, cache proxy (12 sumber, 95% Tier 1)
     ├── queue/
     │   └── QueueService.ts             # BullMQ/Redis wrapper + fallback lokal
     ├── monitoring/
