@@ -23,8 +23,8 @@ Thumbs.db
 .idea/
 .vscode/
 
-# Lock files (Currently ignored, but can be removed if strictly wanted)
-package-lock.json
+# Lock files — di-commit supaya fresh clone pakai versi dependency yang sama persis
+# package-lock.json
 
 # Runtime cache files — dibuat ulang otomatis saat bot jalan
 proxy_cache.json
