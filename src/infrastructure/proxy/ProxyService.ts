@@ -39,46 +39,82 @@ const FLUSH_BATCH       = 10;                  // tulis JSON setiap N proxy baru
 const FLUSH_INTERVAL_MS = 5000;                // atau setiap 5 detik
 
 // ── Sumber proxy publik ────────────────────────────────────────────────────────
-// Diurutkan berdasarkan live test 2-step (HTTP ip-api.com + HTTPS CONNECT).
-// Terakhir ditest: 2026-07-22. Sumber 0% pass rate DIHAPUS — buang waktu validasi.
-//
-// Urutan: pass rate tertinggi → terendah (streaming validator isi pool dari atas).
-// `country` opsional: jika diisi, skip query ip-api.com saat validasi (fast-path).
+// Strategi: prioritaskan sumber country-specific Tier 1 CPM (US/GB/CA/AU/FR/SE/NL/DE/JP)
+// di urutan atas agar streaming validator mengisi pool Tier 1 lebih cepat.
+// Sumber global (yakumo, monosans, TheSpeedX) tetap ada untuk volume tambahan.
+// Terakhir ditest: 2026-07-22. Sumber 0% pass rate DIHAPUS.
 const API_SOURCES: Array<{ name: string; url: string; country?: string; parseMode?: 'lines' | 'regex' | 'json-geonode' }> = [
 
-  // ── 50% pass rate ─────────────────────────────────────────────────────────
-  {
-    // Pre-checked list — hanya proxy yang respond saat list digenerate. #1 best source.
-    name: 'yakumo pre-checked',
-    url: 'https://raw.githubusercontent.com/elliottophellia/yakumo/master/results/http/global/http_checked.txt',
-  },
+  // ── Tier 1 CPM — country-specific (divalidasi country tag, skip ip-api.com step 2) ──
 
-  // ── 33% pass rate ─────────────────────────────────────────────────────────
+  // United States 🇺🇸 — CPM tertinggi
   {
-    // Latency tercepat (375ms avg) — prioritas untuk isi pool awal.
-    name: 'monosans/proxy-list HTTP',
-    url: 'https://raw.githubusercontent.com/monosans/proxy-list/main/proxies/http.txt',
+    name: 'proxyscrape US 🇺🇸',
+    url: 'https://api.proxyscrape.com/v3/free-proxy-list/get?request=displayproxies&proxy_type=http&timeout=5000&country=US&ssl=all&anonymity=all',
+    country: 'US',
   },
+  // United Kingdom 🇬🇧
+  {
+    name: 'proxyscrape GB 🇬🇧',
+    url: 'https://api.proxyscrape.com/v3/free-proxy-list/get?request=displayproxies&proxy_type=http&timeout=5000&country=GB&ssl=all&anonymity=all',
+    country: 'GB',
+  },
+  // Canada 🇨🇦
+  {
+    name: 'proxyscrape CA 🇨🇦',
+    url: 'https://api.proxyscrape.com/v3/free-proxy-list/get?request=displayproxies&proxy_type=http&timeout=5000&country=CA&ssl=all&anonymity=all',
+    country: 'CA',
+  },
+  // Australia 🇦🇺
+  {
+    name: 'proxyscrape AU 🇦🇺',
+    url: 'https://api.proxyscrape.com/v3/free-proxy-list/get?request=displayproxies&proxy_type=http&timeout=5000&country=AU&ssl=all&anonymity=all',
+    country: 'AU',
+  },
+  // France 🇫🇷
+  {
+    name: 'proxyscrape FR 🇫🇷',
+    url: 'https://api.proxyscrape.com/v3/free-proxy-list/get?request=displayproxies&proxy_type=http&timeout=5000&country=FR&ssl=all&anonymity=all',
+    country: 'FR',
+  },
+  // Sweden 🇸🇪
+  {
+    name: 'proxyscrape SE 🇸🇪',
+    url: 'https://api.proxyscrape.com/v3/free-proxy-list/get?request=displayproxies&proxy_type=http&timeout=5000&country=SE&ssl=all&anonymity=all',
+    country: 'SE',
+  },
+  // Netherlands 🇳🇱 (~33% pass rate, sudah terbukti)
   {
     name: 'proxyscrape NL 🇳🇱',
     url: 'https://api.proxyscrape.com/v3/free-proxy-list/get?request=displayproxies&proxy_type=http&timeout=5000&country=NL&ssl=all&anonymity=all',
     country: 'NL',
   },
+  // Germany 🇩🇪 (~33% pass rate, sudah terbukti)
   {
     name: 'proxyscrape DE 🇩🇪',
     url: 'https://api.proxyscrape.com/v3/free-proxy-list/get?request=displayproxies&proxy_type=http&timeout=5000&country=DE&ssl=all&anonymity=all',
     country: 'DE',
   },
-
-  // ── 17% pass rate ─────────────────────────────────────────────────────────
+  // Japan 🇯🇵 (~17% pass rate)
   {
-    // Latency sangat cepat (363ms avg) walau pass rate rendah.
     name: 'proxyscrape JP 🇯🇵',
     url: 'https://api.proxyscrape.com/v3/free-proxy-list/get?request=displayproxies&proxy_type=http&timeout=5000&country=JP&ssl=all&anonymity=all',
     country: 'JP',
   },
+
+  // ── Sumber global (volume besar, country mix — Tier 1 yang lolos tetap masuk tier1[]) ──
   {
-    // Volume besar (3011 proxy) — ada residential GB; pass rate 17%.
+    // Pre-checked list — #1 best source (~50% pass rate).
+    name: 'yakumo pre-checked',
+    url: 'https://raw.githubusercontent.com/elliottophellia/yakumo/master/results/http/global/http_checked.txt',
+  },
+  {
+    // Latency tercepat (375ms avg) — ~33% pass rate.
+    name: 'monosans/proxy-list HTTP',
+    url: 'https://raw.githubusercontent.com/monosans/proxy-list/main/proxies/http.txt',
+  },
+  {
+    // Volume besar (~3000 proxy) — ada residential GB; ~17% pass rate.
     name: 'TheSpeedX/PROXY-List HTTP',
     url: 'https://raw.githubusercontent.com/TheSpeedX/PROXY-List/master/http.txt',
   },
@@ -611,8 +647,10 @@ export class ProxyService {
   }
 
   /**
-   * Ambil proxy berikutnya dengan prioritas Tier 1 (70% Tier1 / 30% Other).
-   * Fallback ke pool mana saja yang tersedia.
+   * Ambil proxy berikutnya dengan prioritas Tier 1 (95% Tier1 / 5% Other).
+   * Tujuan: maksimalkan CPM — hampir semua sesi menggunakan IP dari negara
+   * dengan CPM tinggi (US/GB/CA/AU/FR/SE/NL/DE/JP).
+   * Fallback ke Other hanya jika Tier 1 habis.
    */
   next(): ProxyEntry | undefined {
     const hasTier1 = this.tier1.length > 0;
@@ -620,8 +658,8 @@ export class ProxyService {
 
     if (!hasTier1 && !hasOther) return undefined;
 
-    // 70% Tier1 jika tersedia, 30% Other (atau fallback jika salah satu kosong)
-    const useTier1 = hasTier1 && (!hasOther || Math.random() < 0.70);
+    // 95% Tier1 jika tersedia, 5% Other (atau fallback jika salah satu kosong)
+    const useTier1 = hasTier1 && (!hasOther || Math.random() < 0.95);
 
     if (useTier1) {
       const proxy = this.tier1[this.cursor1 % this.tier1.length];
