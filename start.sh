@@ -13,6 +13,15 @@ ENV_JSON="${SCRIPT_DIR}/.cache/replit/nix/env.json"
 # dibutuhkan harfbuzz (mis: 2.13.3 untuk harfbuzz-10.2.0).
 BASE_LD="${REPLIT_LD_LIBRARY_PATH:-}"
 
+# ── Fallback: .nix_env (di-generate saat build/deploy jika env var tidak ada) ─
+# Di environment deployment, REPLIT_LD_LIBRARY_PATH mungkin tidak di-set sebagai
+# env var shell. .nix_env menyimpan path yang di-capture saat build command jalan.
+if [ -z "$BASE_LD" ] && [ -f "${SCRIPT_DIR}/.nix_env" ]; then
+  IFS='|' read -r _nix_ld _nix_gbm < "${SCRIPT_DIR}/.nix_env"
+  BASE_LD="${_nix_ld:-}"
+  echo "[start.sh] REPLIT_LD_LIBRARY_PATH kosong — fallback ke .nix_env"
+fi
+
 # ── Step 2: GBM path dari env.json (tidak ada di REPLIT_LD_LIBRARY_PATH) ─────
 # mesa-libgbm dibutuhkan Chrome tapi tidak di-export via REPLIT_LD_LIBRARY_PATH;
 # harus dicari dari env.json via regex.

@@ -182,73 +182,90 @@ node_modules/.bin/tsc 2>&1
 success "Build selesai — output di dist/"
 
 # =============================================================================
-# Buat start.sh wrapper dengan LD_LIBRARY_PATH yang benar
+# Buat / verifikasi start.sh launcher
 # =============================================================================
-step "Membuat start.sh launcher"
+step "Verifikasi start.sh launcher"
 
-# Auto-detect Nix lib paths
-build_ld_library_path() {
-  local paths=()
+# JANGAN scan /nix/store — terlalu lambat dan menghasilkan path hardcoded yang
+# akan rusak setiap kali Nix update paket (hash berubah).
+# start.sh yang benar sudah ada di repo dan membaca REPLIT_LD_LIBRARY_PATH
+# secara dinamis + ekstrak GBM dari env.json.
+# install.sh hanya memastikan file ada dan executable.
 
-  if [ "$ENV" = "replit" ]; then
-    # Cari semua lib dir yang relevan dari /nix/store
-    local packages=(
-      "mesa-libgbm"
-      "systemd-minimal-libs"
-      "libxkbcommon"
-      "at-spi2-core"
-      "cups-"
-      "nspr-"
-      "nss-"
-      "alsa-lib"
-      "cairo-"
-      "gtk+-3"
-      "expat-"
-      "dbus-"
-      "freetype-"
-      "libX11-"
-      "libxcb-"
-      "libXcomposite-"
-      "libXcursor-"
-      "libXdamage-"
-      "libXext-"
-      "libXfixes-"
-      "libXi-"
-      "libXrandr-"
-      "libXrender-"
-      "libXScrnSaver-"
-      "libXtst-"
-    )
-
-    for pkg in "${packages[@]}"; do
-      local found
-      found=$(ls -d /nix/store/*-${pkg}*/lib 2>/dev/null | head -1 || echo "")
-      if [ -n "$found" ] && [ -d "$found" ]; then
-        paths+=("$found")
-      fi
-    done
-  fi
-
-  IFS=':' ; echo "${paths[*]}" ; unset IFS
-}
-
-LD_PATH=$(build_ld_library_path)
-
-cat > "${SCRIPT_DIR}/start.sh" << STARTEOF
+if [ -f "${SCRIPT_DIR}/start.sh" ]; then
+  chmod +x "${SCRIPT_DIR}/start.sh"
+  success "start.sh sudah ada dan siap digunakan (dynamic — tidak perlu di-generate ulang)"
+else
+  # Fallback: tulis start.sh dinamis jika entah bagaimana tidak ada di repo
+  warn "start.sh tidak ditemukan di repo — membuat versi dinamis..."
+  cat > "${SCRIPT_DIR}/start.sh" << 'STARTEOF'
 #!/usr/bin/env bash
-# Auto-generated oleh install.sh
-# Jalankan bot dengan library path yang benar
+# Fully dynamic start.sh — JANGAN pernah hardcode /nix/store/HASH-... paths.
 
-SCRIPT_DIR="\$(cd "\$(dirname "\${BASH_SOURCE[0]}")" && pwd)"
-cd "\$SCRIPT_DIR"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "$SCRIPT_DIR"
 
-export LD_LIBRARY_PATH="${LD_PATH}\${LD_LIBRARY_PATH:+:\$LD_LIBRARY_PATH}"
+ENV_JSON="${SCRIPT_DIR}/.cache/replit/nix/env.json"
 
-exec node dist/main.js "\$@"
+# Base LD dari REPLIT_LD_LIBRARY_PATH (selalu berisi versi lib yang benar)
+BASE_LD="${REPLIT_LD_LIBRARY_PATH:-}"
+
+# Fallback .nix_env (di-generate saat build/install)
+if [ -z "$BASE_LD" ] && [ -f "${SCRIPT_DIR}/.nix_env" ]; then
+  IFS='|' read -r _ld _gbm < "${SCRIPT_DIR}/.nix_env"
+  BASE_LD="${_ld:-}"
+fi
+
+# GBM dari env.json (tidak ada di REPLIT_LD_LIBRARY_PATH)
+GBM_LIB=""
+if [ -f "$ENV_JSON" ]; then
+  GBM_LIB=$(python3 - <<'PYEOF'
+import re
+try:
+    with open('.cache/replit/nix/env.json') as f:
+        raw = f.read()
+    m = re.search(r'/nix/store/[a-z0-9]+-mesa-libgbm[^"\s:]*', raw)
+    if m:
+        print(m.group(0).rstrip('/') + '/lib')
+except Exception:
+    pass
+PYEOF
+  2>/dev/null || true)
+fi
+
+if [ -n "$GBM_LIB" ] && [ -n "$BASE_LD" ]; then
+  export LD_LIBRARY_PATH="${GBM_LIB}:${BASE_LD}${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+elif [ -n "$BASE_LD" ]; then
+  export LD_LIBRARY_PATH="${BASE_LD}${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+elif [ -n "$GBM_LIB" ]; then
+  export LD_LIBRARY_PATH="${GBM_LIB}${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+fi
+
+CHROME_BIN=""
+if [ -d "${SCRIPT_DIR}/.puppeteer_cache" ]; then
+  CHROME_BIN=$(find "${SCRIPT_DIR}/.puppeteer_cache" \( -name "chrome-headless-shell" -o -name "chrome" \) -type f 2>/dev/null | head -1)
+fi
+if [ -z "$CHROME_BIN" ] && [ -d "/home/runner/.cache/puppeteer" ]; then
+  CHROME_BIN=$(find "/home/runner/.cache/puppeteer" \( -name "chrome-headless-shell" -o -name "chrome" \) -type f 2>/dev/null | head -1)
+fi
+if [ -z "$CHROME_BIN" ]; then
+  for p in /usr/bin/chromium-browser /usr/bin/chromium /usr/bin/google-chrome; do
+    if [ -f "$p" ]; then CHROME_BIN="$p"; break; fi
+  done
+fi
+if [ -z "$CHROME_BIN" ]; then
+  PUPPETEER_CACHE_DIR="${SCRIPT_DIR}/.puppeteer_cache" \
+    npx puppeteer browsers install chrome-headless-shell 2>&1 | tail -5
+  CHROME_BIN=$(find "${SCRIPT_DIR}/.puppeteer_cache" -name "chrome-headless-shell" -type f 2>/dev/null | head -1)
+fi
+[ -n "$CHROME_BIN" ] && export PUPPETEER_EXECUTABLE_PATH="$CHROME_BIN"
+
+[ ! -f "${SCRIPT_DIR}/dist/main.js" ] && npm run build
+exec node dist/main.js "$@"
 STARTEOF
-
-chmod +x "${SCRIPT_DIR}/start.sh"
-success "start.sh dibuat (gunakan ini untuk menjalankan bot)"
+  chmod +x "${SCRIPT_DIR}/start.sh"
+  success "start.sh dinamis dibuat"
+fi
 
 # =============================================================================
 # RINGKASAN
