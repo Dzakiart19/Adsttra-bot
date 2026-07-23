@@ -33,7 +33,7 @@ export class TrafficOrchestrator {
       const { ReferrerService } = require('../../infrastructure/browser/ReferrerService');
       const referrerService = new ReferrerService(logger);
 
-      StateService.update({ action: 'Membuka browser (stealth mode)...' });
+      StateService.update({ action: '🚀 Meluncurkan browser stealth mode...' });
       await this.engine.init({
         userAgent: config.userAgent,
         viewport: config.viewport,
@@ -47,7 +47,7 @@ export class TrafficOrchestrator {
       // 1. Geolocation Matching
       if (Config.MATCH_GEOLOCATION && config.proxy) {
         try {
-          StateService.update({ action: 'Matching geolocation ke IP proxy...' });
+          StateService.update({ action: '🌍 Mencocokkan lokasi GPS dengan IP proxy...' });
           // Ekstrak host dari proxy server (format: "host:port") lalu query langsung
           // ke ip-api.com/{host} agar mendapat geolokasi IP proxy, bukan IP server sendiri
           const proxyHost = config.proxy.server.split(':')[0];
@@ -73,14 +73,15 @@ export class TrafficOrchestrator {
         const { name, url: homepageUrl } = referrerService.getSearchHomepage(Config.SEARCH_ENGINE);
 
         logger.info(`Simulating Organic Search via ${name}`, { keyword, homepageUrl });
-        StateService.update({ action: `Membuka ${name} untuk organic search...`, referrer: homepageUrl });
+        StateService.update({ action: `🌐 Membuka ${name}...`, referrer: homepageUrl });
 
         await this.engine.navigate(homepageUrl);
+        StateService.update({ action: `✅ ${name} berhasil dimuat — menunggu halaman siap...` });
         await this.engine.waitForNetworkIdle();
         await this.engine.handleConsentPopups();
         await this.engine.randomDelay(1000, 3000);
 
-        StateService.update({ action: `Mengetik keyword: "${keyword}"` });
+        StateService.update({ action: `⌨️ Mengetik keyword: "${keyword}"` });
         await this.engine.searchKeyword(keyword);
         const searchUrl = await this.engine.evaluate(() => window.location.href);
 
@@ -101,13 +102,13 @@ export class TrafficOrchestrator {
         let clicked = false;
 
         for (let page = 1; page <= pageLimit; page++) {
-          StateService.update({ action: `Mencari target di halaman pencarian ${page}/${pageLimit}...` });
+          StateService.update({ action: `🔍 Mencari target di halaman SERP ${page}/${pageLimit}...` });
           logger.info(`Searching for target link (Page ${page}/${pageLimit})...`);
           clicked = await this.engine.clickSearchResult(targetValue);
 
           if (clicked) {
             logger.info(`Successfully clicked target on page ${page}!`);
-            StateService.update({ action: `Klik hasil pencarian → navigasi ke target` });
+            StateService.update({ action: `🖱️ Mengklik hasil pencarian → menuju target...` });
             await this.engine.wait(Math.floor(Math.random() * 2000) + 3000);
             try { await this.engine.waitForNetworkIdle(); } catch { /* ok */ }
             break;
@@ -123,20 +124,22 @@ export class TrafficOrchestrator {
 
         if (!clicked) {
           logger.warn(`Target not found within ${pageLimit} pages. Navigating directly.`);
-          StateService.update({ action: 'Target tidak ditemukan di SERP, navigasi langsung...' });
+          StateService.update({ action: '⚠️ Target tidak ditemukan di SERP — navigasi langsung...' });
           await this.engine.setExtraHeaders({ 'Referer': searchUrl });
+          StateService.update({ action: `🌐 Membuka halaman: ${config.url}` });
           await this.engine.navigate(config.url);
+          StateService.update({ action: `✅ Halaman target berhasil dimuat` });
         }
       } else {
         const referrer = referrerService.getRandomReferrer(Config.REFERRER_POOL);
         if (referrer) {
           logger.info(`Spoofing Referrer`, { referrer });
-          StateService.update({ referrer, action: `Spoofing referrer → navigasi ke target...` });
+          StateService.update({ referrer, action: `🔗 Menyiapkan referrer: ${referrer}` });
           await this.engine.setExtraHeaders({ 'Referer': referrer });
-        } else {
-          StateService.update({ action: 'Navigasi langsung ke target...' });
         }
+        StateService.update({ action: `🌐 Membuka halaman: ${config.url}` });
         await this.engine.navigate(config.url);
+        StateService.update({ action: `✅ Halaman target berhasil dimuat` });
       }
 
       // 3. Proxy-block detection: cek apakah target site memblok IP proxy ini
@@ -173,7 +176,7 @@ export class TrafficOrchestrator {
           if (isBlocked) {
             const shortText = bodyText.substring(0, 120).replace(/\n/g, ' ');
             logger.warn(`[TrafficOrchestrator] Proxy diblok oleh target site: "${shortText}"`);
-            StateService.update({ action: `⚠ Proxy diblok target site — retry proxy lain...` });
+            StateService.update({ action: `🚫 Proxy diblok oleh target site — ganti proxy...` });
             throw new Error(`ERR_PROXY: Target site blocked this proxy IP — "${shortText}"`);
           }
 
@@ -201,44 +204,43 @@ export class TrafficOrchestrator {
       //   3. Scroll kembali ke atas perlahan — trigger observer kedua kali (beberapa
       //      ad network hitung ulang jika keluar-masuk viewport)
       {
-        StateService.update({ action: 'Ad warm-up: menunggu Adsterra script init (3s)...' });
+        StateService.update({ action: '⏳ Menunggu script iklan selesai load (3s)...' });
         await this.engine.wait(3000);
 
         try {
-          // Ambil tinggi halaman dan viewport dari browser
           const pageInfo: { scrollHeight: number; viewportHeight: number } = await this.engine.evaluate(() => ({
             scrollHeight: Math.max(document.body.scrollHeight, document.documentElement.scrollHeight),
             viewportHeight: window.innerHeight,
           }));
 
           const { scrollHeight, viewportHeight } = pageInfo;
-          // Scroll dalam chunk ~60% viewport agar setiap elemen punya overlap antar langkah
           const chunkSize = Math.floor(viewportHeight * 0.6);
-          // Estimasi jumlah langkah untuk cover seluruh halaman
           const totalSteps = Math.ceil(scrollHeight / chunkSize);
 
           logger.debug(`Ad warm-up full-page sweep: pageHeight=${scrollHeight} viewportH=${viewportHeight} steps=${totalSteps} chunkSize=${chunkSize}`);
-          StateService.update({ action: `Ad warm-up: full-page sweep ${totalSteps} langkah untuk trigger semua ${10} iklan...` });
+          StateService.update({ action: `📺 Memulai ad warm-up — halaman ${scrollHeight}px, total ${totalSteps} langkah scroll` });
+          await this.engine.wait(400);
 
           // ── Sweep turun: top → bottom ──────────────────────────────────────────
           for (let step = 0; step < totalSteps; step++) {
+            StateService.update({ action: `📺 Ad warm-up ↓ step ${step + 1}/${totalSteps} — memicu IntersectionObserver iklan...` });
             await this.engine.scroll(0, chunkSize);
-            // Pause 700–1100ms per langkah — cukup lama untuk IntersectionObserver callback
             const pauseMs = Math.floor(Math.random() * 400) + 700;
             await this.engine.wait(pauseMs);
           }
 
-          // Tahan di bawah halaman 1.5s — iklan paling bawah butuh waktu extra
+          StateService.update({ action: '📺 Menahan posisi bawah — menunggu iklan terbawah load...' });
           await this.engine.wait(1500);
 
-          // ── Sweep naik: bottom → top (lebih lambat, natural) ──────────────────
-          const upSteps = Math.ceil(totalSteps * 0.6); // tidak perlu balik 100%, cukup ke tengah
+          // ── Sweep naik: bottom → top ──────────────────────────────────────────
+          const upSteps = Math.ceil(totalSteps * 0.6);
           for (let step = 0; step < upSteps; step++) {
+            StateService.update({ action: `📺 Ad warm-up ↑ kembali ke atas (${step + 1}/${upSteps})` });
             await this.engine.scroll(0, -chunkSize);
             await this.engine.wait(Math.floor(Math.random() * 300) + 500);
           }
 
-          // Kembali ke posisi atas (scroll to top)
+          StateService.update({ action: '✅ Ad warm-up selesai — semua iklan telah di-trigger' });
           await this.engine.evaluate(() => { window.scrollTo({ top: 0, behavior: 'smooth' }); });
           await this.engine.wait(800);
 

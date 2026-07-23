@@ -1,5 +1,6 @@
 import { BrowserEngine } from '../../domain/interfaces/BrowserEngine';
 import { logger } from '../logging/logger';
+import { StateService } from '../monitoring/StateService';
 
 export interface BehaviorOptions {
   intensity: 'low' | 'medium' | 'high';
@@ -28,12 +29,12 @@ export class BehaviorService {
     } else if (rand < thresholds.move) {
       await this.simulateMouseMove(engine, viewport);
     } else if (rand < thresholds.pause) {
-      // Simulate "Reading" - long pause with micro-jitters
-      logger.debug('Simulating reading pause...');
       const pauseDuration = Math.floor(Math.random() * 3000) + 2000;
+      const pauseSec = (pauseDuration / 1000).toFixed(1);
+      StateService.update({ action: `📖 Membaca konten halaman... (${pauseSec}s)` });
+      logger.debug(`Simulating reading pause: ${pauseSec}s`);
       const start = Date.now();
       while (Date.now() - start < pauseDuration) {
-        // Occasional tiny mouse nudge while reading
         if (Math.random() > 0.8) {
           const nudgeX = Math.floor(Math.random() * 10) - 5;
           const nudgeY = Math.floor(Math.random() * 10) - 5;
@@ -42,17 +43,19 @@ export class BehaviorService {
         await engine.wait(500);
       }
     } else {
-      // Micro-wait
-      await engine.wait(Math.floor(Math.random() * 500) + 100);
+      const ms = Math.floor(Math.random() * 500) + 100;
+      StateService.update({ action: `⏸ Jeda sejenak... (${ms}ms)` });
+      await engine.wait(ms);
     }
   }
 
   private static async simulateScroll(engine: BrowserEngine): Promise<void> {
-    const direction = Math.random() > 0.3 ? 1 : -1; // Mostly scroll down
+    const direction = Math.random() > 0.3 ? 1 : -1;
     const distance = Math.floor(Math.random() * 400) + 100;
+    const dir = direction > 0 ? '↓' : '↑';
+    StateService.update({ action: `📜 Scroll ${dir} ${distance}px` });
     logger.debug(`Simulating scroll: ${direction * distance}px`);
     
-    // Smooth scroll simulation via steps
     const steps = 5;
     const stepDistance = Math.floor(distance / steps);
     for (let i = 0; i < steps; i++) {
@@ -67,6 +70,7 @@ export class BehaviorService {
   ): Promise<void> {
     const targetX = Math.floor(Math.random() * viewport.width);
     const targetY = Math.floor(Math.random() * viewport.height);
+    StateService.update({ action: `🖱️ Gerakkan mouse ke koordinat (${targetX}, ${targetY})` });
     logger.debug(`Simulating mouse move to: ${targetX}, ${targetY}`);
     await engine.mouseMove(targetX, targetY);
   }
