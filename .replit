@@ -62,7 +62,7 @@ args = "bash start.sh"
 [deployment]
 deploymentTarget = "autoscale"
 run = ["bash", "start.sh"]
-build = ["bash", "-c", "npm install && npm run build && rm -f proxy_cache.json uptime_stats.json && rm -rf .puppeteer_cache/chrome-headless-shell && PUPPETEER_CACHE_DIR=.puppeteer_cache npx puppeteer browsers install chrome-headless-shell && python3 -c \"import re\ntry:\n  c=open('.cache/replit/nix/env.json').read()\n  m=re.search(r'\\\"REPLIT_LD_LIBRARY_PATH\\\":\\\"([^\\\"]+)\\\"',c)\n  ld=m.group(1) if m else ''\n  gbm=sorted(set(re.findall(r'/nix/store/[a-z0-9]+-mesa-libgbm[^\\\":/\\\\s]*',c)))\n  gbm_lib=gbm[-1]+'/lib' if gbm else ''\n  open('.nix_env','w').write(ld+'|'+gbm_lib)\n  print('[build] .nix_env saved GBM='+gbm_lib)\nexcept Exception as e:\n  print('[build] WARNING .nix_env gagal:',e)\n\""]
+build = ["bash", "-c", "npm install && npm run build && rm -f proxy_cache.json uptime_stats.json && rm -rf .puppeteer_cache/chrome-headless-shell && PUPPETEER_CACHE_DIR=.puppeteer_cache npx puppeteer browsers install chrome-headless-shell && printf '%s|' \"${REPLIT_LD_LIBRARY_PATH}\" > .nix_env && echo \"[build] .nix_env saved ($(wc -c < .nix_env) bytes, mesa=$(grep -o 'mesa[^:]*' .nix_env | head -1))\""]
 
 [[ports]]
 localPort = 3000
