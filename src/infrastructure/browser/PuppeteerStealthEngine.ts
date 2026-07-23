@@ -158,7 +158,13 @@ export class PuppeteerStealthEngine implements BrowserEngine {
 
   async navigate(url: string): Promise<void> {
     if (!this.page) throw new Error('Engine not initialized');
-    await this.page.goto(url, { waitUntil: 'networkidle2', timeout: 60000 });
+    // 'load' lebih reliable dari 'networkidle2' untuk ad-heavy sites:
+    // Ad network terus-menerus ping tracking server sehingga networkidle2
+    // tidak pernah tercapai → 60s timeout → salah diklasifikasikan sebagai
+    // proxy error → proxy slot terbuang. Setelah 'load', ad warm-up di
+    // TrafficOrchestrator (5-8s + IntersectionObserver scroll) sudah cukup
+    // untuk memastikan impression XHR dikirim.
+    await this.page.goto(url, { waitUntil: 'load', timeout: 30000 });
   }
 
   async wait(ms: number): Promise<void> {
@@ -213,9 +219,9 @@ export class PuppeteerStealthEngine implements BrowserEngine {
     if (!this.page) throw new Error('Engine not initialized');
     await this.page.setGeolocation({ latitude, longitude, accuracy: 100 });
     
-    // Also need to grant permission for geolocation
+    // Grant geolocation permission for all origins (page.url() is about:blank before navigate)
     const context = this.browser!.defaultBrowserContext();
-    await context.overridePermissions(this.page.url(), ['geolocation']);
+    await context.overridePermissions('', ['geolocation']);
   }
 
   async waitForNetworkIdle(): Promise<void> {

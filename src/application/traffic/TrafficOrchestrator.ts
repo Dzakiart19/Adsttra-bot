@@ -4,7 +4,6 @@ import { logger } from '../../infrastructure/logging/logger';
 import { Config } from '../../infrastructure/config/config';
 import { BehaviorService } from '../../infrastructure/browser/BehaviorService';
 import { MetricsService } from '../../infrastructure/monitoring/MetricsService';
-import { ReputationService } from '../../infrastructure/monitoring/ReputationService';
 import { StateService } from '../../infrastructure/monitoring/StateService';
 
 export class TrafficOrchestrator {
@@ -170,7 +169,7 @@ export class TrafficOrchestrator {
             /bot.*detected/i,
           ];
 
-          const isBlocked = bodyText.length < 300 && BLOCK_PATTERNS.some(re => re.test(bodyText));
+          const isBlocked = bodyText.length < 500 && BLOCK_PATTERNS.some(re => re.test(bodyText));
           if (isBlocked) {
             const shortText = bodyText.substring(0, 120).replace(/\n/g, ' ');
             logger.warn(`[TrafficOrchestrator] Proxy diblok oleh target site: "${shortText}"`);

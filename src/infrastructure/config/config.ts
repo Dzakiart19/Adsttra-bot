@@ -33,7 +33,7 @@ const ConfigSchema = z.object({
   SEARCH_PAGES_LIMIT: z.coerce.number().min(1).max(10).default(1),
   SEARCH_ENGINE: z.enum(['google', 'bing', 'duckduckgo', 'random']).default('google'),
   LOOP_FOREVER: z.preprocess((a) => a === 'true' || a === '1' || a === true, z.boolean()).default(false),
-  LOOP_COOLDOWN_SEC: z.coerce.number().int().min(0).default(30),
+  LOOP_COOLDOWN_SEC: z.coerce.number().int().min(0).default(0),
   // 0 = tidak ada target (loop sesuai LOOP_FOREVER). > 0 = stop otomatis setelah N sesi sukses.
   TARGET_IMPRESSIONS: z.coerce.number().int().min(0).default(0),
   // Webshare.io proxy — format: host:port:user:pass,host:port:user:pass,...
