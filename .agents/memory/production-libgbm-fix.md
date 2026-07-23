@@ -1,6 +1,6 @@
 ---
 name: Production libgbm fix
-description: Root cause and fix for "libgbm.so.1: cannot open shared object file" / Chrome exit 127 in autoscale production. Fixed 2026-07-23.
+description: Root cause and fix for "libgbm.so.1: cannot open shared object file" / Chrome exit 127 in autoscale production. FULLY CONFIRMED 2026-07-23.
 ---
 
 ## Symptom
@@ -8,41 +8,55 @@ Production (autoscale): `Failed to launch the browser process: Code: 127`
 ```
 chrome-headless-shell: error while loading shared libraries: libgbm.so.1: cannot open shared object file: No such file or directory
 ```
-Dev works fine. Dashboard shows `LD_LIBRARY_PATH set (freetype=freetype-2.13.3, gbm=none)`.
+Dev works fine.
 
 ## Root cause (confirmed via production logs)
-In production autoscale runtime, `REPLIT_LD_LIBRARY_PATH` IS set — but does NOT include mesa.
-Freetype and other libs are present, but mesa (which contains `libgbm.so.1`) is absent.
+In production autoscale **runtime**, the Nix store does NOT have mesa packages at all.
+`REPLIT_LD_LIBRARY_PATH` is set but without mesa, AND `/nix/store` in the runtime container
+has no `mesa-*` entries. Confirmed by: start.sh Step 2d (Nix store search) printing
+`WARNING: libgbm.so.1 tidak ditemukan` in the deployment logs.
 
-This is a Replit autoscale behavior: `replit.nix` with `pkgs.mesa` installs mesa into the Nix
-store, but the autoscale runtime container exports a different (smaller) `REPLIT_LD_LIBRARY_PATH`
-that omits mesa. The dev environment includes mesa in `REPLIT_LD_LIBRARY_PATH`; production does not.
+Build container (where build command runs) DOES have mesa in the Nix store.
+Runtime container (where app actually runs) does NOT have mesa.
 
-Old approaches that failed:
-- Python script reading env.json → env.json may not exist in production build containers
-- `printf REPLIT_LD_LIBRARY_PATH > .nix_env` → .nix_env captures LD without mesa at build time if build container also omits mesa
-- `ls /nix/store | grep mesa | tail -1` → picks wrong package (e.g. mesa-drivers, not main mesa)
+## Fix (current, 2026-07-23 — WORKING)
+### bundle_libs.sh
+Runs during build. Finds libgbm.so.1 in build container's Nix store → copies it
+and all non-glibc transitive deps to `.lib/` in the workspace:
+- libgbm.so.1 (+ .so, .so.1.0.0) ← the missing lib
+- libglapi.so.0
+- libdrm.so.2
+- libwayland-server.so.0
+- libffi.so.8
+- libexpat.so.1
 
-## Fix (current, 2026-07-23)
-In `start.sh` Step 2c: iterate all mesa packages in Nix store, check each for `libgbm.so.1`:
+Build command: `... && bash bundle_libs.sh`
+This writes `.lib/` with 18 files (libs + symlinks), and updates `.nix_env` with the path.
+
+### start.sh Step 2a (highest priority)
 ```bash
-for _mesa_pkg in $(ls /nix/store 2>/dev/null | grep -E '^[a-z0-9]+-mesa-[0-9]'); do
-  if [ -f "/nix/store/${_mesa_pkg}/lib/libgbm.so.1" ]; then
-    GBM_LIB="/nix/store/${_mesa_pkg}/lib"
-    break
-  fi
-done
+if [ -f "${SCRIPT_DIR}/.lib/libgbm.so.1" ]; then
+  GBM_LIB="${SCRIPT_DIR}/.lib"
+fi
 ```
-`ls /nix/store` = top-level only (fast). Multiple mesa versions exist; iterate to find correct one.
-Verified working: finds `mesa-22.3.7` with `libgbm.so.1` present → Chrome launches successfully.
+`.lib/` is in the workspace → persists from build to runtime → always available.
 
-## Key facts
-- Mesa IS in Nix store in production (replit.nix installs it) — just not in REPLIT_LD_LIBRARY_PATH
-- Multiple mesa packages coexist in /nix/store; the one with libgbm.so.1 may not be the latest
-- `ls /nix/store | grep -E '^[a-z0-9]+-mesa-[0-9]'` is fast (top-level listing, no recursion)
-- `find /nix/store -name "libgbm.so.1"` is SLOW — times out — never use it
+### Full fallback chain
+2a → .lib/ (workspace bundle, PRIMARY for production)
+2b → .nix_env GBM part (also points to .lib/ after bundle_libs.sh)
+2c → mesa already in REPLIT_LD_LIBRARY_PATH (dev/local normal case)
+2d → Nix store search (ls /nix/store, fallback, won't work in production)
+
+## Transitive deps of libgbm.so.1
+- libdrm.so.2 → only glibc (always available)
+- libwayland-server.so.0 → libffi.so.8 + glibc
+- libexpat.so.1 → glibc only
+- libffi.so.8 → glibc only
+All non-glibc deps are shallow (1 level) — no deep recursion needed.
 
 ## How to apply
 If Chrome fails with Code 127 / libgbm missing in production:
-1. Verify start.sh Step 2c iterates all mesa packages (not head/tail -1)
-2. Republish to deploy the fixed start.sh
+1. Verify `bundle_libs.sh` exists and build command ends with `&& bash bundle_libs.sh`
+2. Verify `start.sh` Step 2a checks `${SCRIPT_DIR}/.lib/libgbm.so.1`
+3. Republish — build container will copy mesa libs into `.lib/`
+4. `.lib/` must NOT be in .gitignore (it's a build artifact that needs to persist)
