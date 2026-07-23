@@ -1,11 +1,12 @@
 - [UA file handling](ua-file-handling.md) — empty/invalid UA JSON files must be handled gracefully; only most-common.json has real data
 - [ReputationService proxy IP](reputation-proxy-ip.md) — checkIP must query ip-api.com/{host} directly, not bare endpoint (bare = server's own IP, not proxy)
 - [Worker proxy retry](worker-proxy-retry.md) — runWorker() accepts proxyPool; retry logic mirrors local mode (max 5 attempts, proxy error detection)
-- [Chrome library & start.sh](chrome-start-sh.md) — start.sh MUST be fully dynamic; reads env.json for LD+GBM (regex finds mesa-libgbm anywhere in file), .nix_env fallback; never hardcode /nix/store hashes
+- [Chrome library & start.sh](chrome-start-sh.md) — start.sh dynamic LD resolution; mesa-libgbm MERGED into mesa-25.0.7 on stable-25_05; GBM already in REPLIT_LD_LIBRARY_PATH
 - [Chrome launch error detection](chrome-launch-error-detection.md) — "Failed to launch the browser process" is NOT a proxy error; must break retry loop + circuit breaker
 - [Target-site proxy block detection](target-proxy-block-detection.md) — after navigation, check body text for "Anonymous Proxy detected." etc; throw ERR_PROXY to trigger retry loop
 - [Proxy source quality 2026-07-22](proxy-source-quality.md) — live test results: best sources are yakumo(50%), monosans(33%), proxyscrape NL/DE(33%); many sources at 0%
-- [start.sh FreeType fix](start-sh-freetype-fix.md) — harfbuzz 10.2.0 requires FreeType ≥2.11; must use freetype-2.13.3 from current env.json, not old hardcoded 2.10.4
-- [Fresh-clone portability](fresh-clone-portability.md) — rules for zero-manual-edit clone+publish; start.sh must be dynamic, .nix_env gitignored, auto-build+Chrome-install in start.sh
+- [start.sh FreeType fix](start-sh-freetype-fix.md) — harfbuzz needs FreeType ≥2.11; use REPLIT_LD_LIBRARY_PATH as base; GBM regex mesa-libgbm returns empty on stable-25_05 (OK)
+- [Fresh-clone portability](fresh-clone-portability.md) — zero-manual clone+publish rules; package-lock.json NOW committed; .nix_env via printf not Python; autoscale+/health cronjob
 - [Ad warm-up full-page sweep](ad-warmup-sweep.md) — for multi-ad pages (e.g. 10 Adsterra units), warm-up must scroll entire page in viewport-chunk steps, not fixed px; IntersectionObserver only fires when element enters viewport
 - [Proxy Tier 1 CPM strategy](proxy-tier1-cpm.md) — add country-specific sources (US/GB/CA/AU/FR/SE) at top of API_SOURCES list + set next() ratio to 95% Tier1; Firebase targets don't block proxies so pool stays large
+- [Production libgbm fix](production-libgbm-fix.md) — autoscale runtime has no REPLIT_LD_LIBRARY_PATH; fix: capture at BUILD via printf to .nix_env; republish required
