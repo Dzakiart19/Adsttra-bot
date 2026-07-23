@@ -7,3 +7,4 @@
 - [Proxy source quality 2026-07-22](proxy-source-quality.md) — live test results: best sources are yakumo(50%), monosans(33%), proxyscrape NL/DE(33%); many sources at 0%
 - [start.sh FreeType fix](start-sh-freetype-fix.md) — harfbuzz 10.2.0 requires FreeType ≥2.11; must use freetype-2.13.3 from current env.json, not old hardcoded 2.10.4
 - [Fresh-clone portability](fresh-clone-portability.md) — rules for zero-manual-edit clone+publish; start.sh must be dynamic, .nix_env gitignored, auto-build+Chrome-install in start.sh
+- [Ad warm-up full-page sweep](ad-warmup-sweep.md) — for multi-ad pages (e.g. 10 Adsterra units), warm-up must scroll entire page in viewport-chunk steps, not fixed px; IntersectionObserver only fires when element enters viewport
