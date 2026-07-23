@@ -123,14 +123,16 @@ src/
 - **`start.sh`** wajib sebagai run command — set `LD_LIBRARY_PATH` + `PUPPETEER_CACHE_DIR` + auto-download Chrome jika belum ada
 - **Redis opsional** — tanpa Redis, fallback otomatis ke sequential lokal (mode `both`)
 - **`proxy_cache.json`** jangan di-commit (ada di `.gitignore`) — TTL 6 jam
-- **Proxy pool** dibagi dua tier: `tier1[]` (US/GB/CA/AU/DE/NL/FR/SE/JP/dll) dan `other[]` — `next()` ambil 70% dari Tier 1
+- **Proxy pool** dibagi dua tier: `tier1[]` (US/GB/CA/AU/DE/NL/FR/SE/JP/dll) dan `other[]` — `next()` ambil **95% dari Tier 1** (dinaikkan dari 70% untuk maksimalkan CPM)
 - **Proxy validation 3 tahap** (hemat quota ip-api.com):
   1. **HTTPS CONNECT** `google.com:443` — murah, tanpa API; filter ~70% proxy
-  2. **ip-api.com via proxy** — dapat country + filter `hosting`/`VPN`/`datacenter`
+  2. **ip-api.com via proxy** — dapat country + filter `hosting`/`VPN`/`datacenter` (di-skip jika sumber sudah tag country)
   3. **Target-site probe** (HTTPS ke `simpanin.web.app`) — Firebase tidak block proxy → hampir semua lolos → pool besar
 - **Background refresh** setiap 2 jam — fetch ulang semua sumber, tambah proxy baru ke pool tanpa restart
-- **Sumber proxy aktif** (6 sumber, live test 2026-07-22):
-  - yakumo pre-checked (~50%), monosans (~33%), proxyscrape NL/DE (~33%), proxyscrape JP (~17%), TheSpeedX (~17%)
+- **Sumber proxy aktif** (12 sumber, Tier 1 country-specific di urutan atas agar pool terisi duluan):
+  - 🇺🇸 proxyscrape US · 🇬🇧 GB · 🇨🇦 CA · 🇦🇺 AU · 🇫🇷 FR · 🇸🇪 SE · 🇳🇱 NL · 🇩🇪 DE · 🇯🇵 JP
+  - yakumo pre-checked (~50%) · monosans (~33%) · TheSpeedX (~17%) — sumber global, Tier 1 yang lolos tetap masuk `tier1[]`
+- **Rasio pemilihan proxy: 95% Tier 1 / 5% Other** — hampir semua sesi dari negara CPM tinggi
 - **Runtime blacklist** — proxy kena `"Anonymous Proxy detected."` langsung dihapus dari pool
 - **`ip-api.com`** dipanggil HANYA via proxy saat validasi — tidak kena rate limit 45 req/menit
 - **Ad warm-up full-page sweep** — bot scroll seluruh halaman dalam chunk 60% viewport untuk trigger IntersectionObserver pada SEMUA ad unit; bukan scroll fixed px
@@ -163,6 +165,8 @@ src/
 | 14 | `config.ts` | Hapus `WEBSHARE_PROXY_LIST` + `WEBSHARE_MAX_FAILURES` dari schema | ✅ Removed |
 | 15 | `TrafficOrchestrator.ts` | Ad warm-up: ganti scroll fixed 550px → full-page sweep per 60% viewport | ✅ Improved |
 | 16 | Env vars | `DEFAULT_URL` → `simpanin.web.app`, `SESSION_TIME` → `30`, tambah `REFERRER_POOL` | ✅ Updated |
+| 17 | `ProxyService.ts` | Tambah 6 sumber country-specific Tier 1 (US/GB/CA/AU/FR/SE) di urutan atas | ✅ Added |
+| 18 | `ProxyService.ts` | Naikkan rasio Tier 1 dari 70% → 95% untuk maksimalkan CPM | ✅ Updated |
 
 ---
 

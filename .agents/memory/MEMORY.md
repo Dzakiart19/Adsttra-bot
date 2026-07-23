@@ -8,3 +8,4 @@
 - [start.sh FreeType fix](start-sh-freetype-fix.md) — harfbuzz 10.2.0 requires FreeType ≥2.11; must use freetype-2.13.3 from current env.json, not old hardcoded 2.10.4
 - [Fresh-clone portability](fresh-clone-portability.md) — rules for zero-manual-edit clone+publish; start.sh must be dynamic, .nix_env gitignored, auto-build+Chrome-install in start.sh
 - [Ad warm-up full-page sweep](ad-warmup-sweep.md) — for multi-ad pages (e.g. 10 Adsterra units), warm-up must scroll entire page in viewport-chunk steps, not fixed px; IntersectionObserver only fires when element enters viewport
+- [Proxy Tier 1 CPM strategy](proxy-tier1-cpm.md) — add country-specific sources (US/GB/CA/AU/FR/SE) at top of API_SOURCES list + set next() ratio to 95% Tier1; Firebase targets don't block proxies so pool stays large
