@@ -1,10 +1,92 @@
 #!/usr/bin/env bash
-# Auto-generated oleh install.sh
-# Jalankan bot dengan library path yang benar
+# Fully dynamic start.sh — JANGAN pernah hardcode /nix/store/HASH-... paths.
+# Hash Nix berubah setiap update paket; script ini selalu baca environment saat ini.
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
-export LD_LIBRARY_PATH="/nix/store/24w3s75aa2lrvvxsybficn8y3zxd27kp-mesa-libgbm-25.1.0/lib:/nix/store/0iqri8mm7vqnf7vr0bm8qkbak2g18q1x-systemd-minimal-libs-255.6-dev/lib:/nix/store/01p6q379ph9iwjwy3svdm59yw45mn6w6-libxkbcommon-0.7.2-dev/lib:/nix/store/00bywbidfprrn50vrlzm58lq4i3h7fnh-at-spi2-core-2.50.2/lib:/nix/store/02b1r3a635n2lfnwn7zr3i48aidvp501-cups-2.3.3/lib:/nix/store/0schwghhdnmchwc180r5b85r1xrwlv93-nspr-4.35-dev/lib:/nix/store/099d1r004qn5jpbmkhphgzx88jfx74w7-nss-mdns-0.15.1/lib:/nix/store/0g7r7krqiz6g3nb3651sfa5myd9gqkzf-alsa-lib-1.2.11/lib:/nix/store/00djx2bqz895ddac2jgqg8sa7hi5a3w8-gi-cairo-1.0.26/lib:/nix/store/070s6fml7n4g0c2n32bzydc06955b6ab-expat-2.7.1/lib:/nix/store/00y6vbsqqn20vdh2y5w36cj5p8nr5cw2-chicken-dbus-0.97/lib:/nix/store/01m7xfwkalqini87gjv37d7gq2qaiz8b-freetype-2.10.4/lib:/nix/store/0gxrwp9xnzb5li8i7w3q7qmm0lm808qq-libX11-1.8.9-dev/lib:/nix/store/09aq563zkqcw9ikxn02p4bm13i2hz51r-libxcb-1.17.0/lib:/nix/store/0lvg7w3z2dgsizdf8m23vgi1vgs4fki3-libXcomposite-0.4.6-dev/lib:/nix/store/05m5r0rhjj590x8npy5syc8sc0qzhf2s-libXcursor-1.2.0-dev/lib:/nix/store/120iznmgwcdf1a8bdnn69csyqs2i684f-libXdamage-1.1.6-dev/lib:/nix/store/0046rn5sgi6l38zl81bg2r02zlzxqqbc-libXext-1.3.6/lib:/nix/store/176zb6rql061hawvybln7xn8c73jjbp4-libXfixes-6.0.1/lib:/nix/store/0mkmwjz3gnnsnw1d1ch1cdy4qkxwp15j-libXi-1.8-dev/lib:/nix/store/0dc3l2207a676x11asvq56lz2sin9jc5-libXrandr-1.5.2-dev/lib:/nix/store/0j5kn0y8w955spfjjkz4h82q6jdn387b-libXrender-0.9.10/lib:/nix/store/1dpwfla39ap6nsj6v8xj9s8vp5nv3cpv-libXScrnSaver-1.2.4/lib:/nix/store/005b9zpxxpx79g324amq1hrq3db0daky-libXtst-1.2.3/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+ENV_JSON="${SCRIPT_DIR}/.cache/replit/nix/env.json"
+
+# ── Step 1: Base LD_LIBRARY_PATH dari REPLIT_LD_LIBRARY_PATH ─────────────────
+# REPLIT_LD_LIBRARY_PATH di-set oleh Nix environment dan selalu berisi path
+# yang benar untuk environment saat ini — termasuk freetype versi baru yang
+# dibutuhkan harfbuzz (mis: 2.13.3 untuk harfbuzz-10.2.0).
+BASE_LD="${REPLIT_LD_LIBRARY_PATH:-}"
+
+# ── Step 2: GBM path dari env.json (tidak ada di REPLIT_LD_LIBRARY_PATH) ─────
+# mesa-libgbm dibutuhkan Chrome tapi tidak di-export via REPLIT_LD_LIBRARY_PATH;
+# harus dicari dari env.json via regex.
+GBM_LIB=""
+if [ -f "$ENV_JSON" ]; then
+  GBM_LIB=$(python3 - <<'PYEOF'
+import json, re, sys
+try:
+    with open('.cache/replit/nix/env.json') as f:
+        raw = f.read()
+    m = re.search(r'/nix/store/[a-z0-9]+-mesa-libgbm[^"\s:]*', raw)
+    if m:
+        p = m.group(0).rstrip('/')
+        print(p + '/lib')
+except Exception:
+    pass
+PYEOF
+  2>/dev/null || true)
+fi
+
+# ── Step 3: Gabungkan — GBM di-prepend (harus dapat prioritas lebih tinggi) ──
+if [ -n "$GBM_LIB" ] && [ -n "$BASE_LD" ]; then
+  export LD_LIBRARY_PATH="${GBM_LIB}:${BASE_LD}${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+elif [ -n "$BASE_LD" ]; then
+  export LD_LIBRARY_PATH="${BASE_LD}${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+elif [ -n "$GBM_LIB" ]; then
+  export LD_LIBRARY_PATH="${GBM_LIB}${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+fi
+
+echo "[start.sh] LD_LIBRARY_PATH set (freetype=$(echo "$LD_LIBRARY_PATH" | tr ':' '\n' | grep -o 'freetype-[0-9.]*' | head -1), gbm=$(echo "$GBM_LIB" | grep -o 'mesa-libgbm-[^ /]*' || echo 'none'))"
+
+# ── Step 4: Cari Chrome binary ────────────────────────────────────────────────
+# Hanya scan direktori kecil (JANGAN find /nix/store — terlalu lambat).
+CHROME_BIN=""
+
+# Prioritas 1: .puppeteer_cache/ lokal (di-install oleh build command deployment)
+if [ -d "${SCRIPT_DIR}/.puppeteer_cache" ]; then
+  CHROME_BIN=$(find "${SCRIPT_DIR}/.puppeteer_cache" \
+    \( -name "chrome-headless-shell" -o -name "chrome" \) -type f 2>/dev/null | head -1)
+fi
+
+# Prioritas 2: ~/.cache/puppeteer (lokasi default puppeteer download)
+if [ -z "$CHROME_BIN" ] && [ -d "/home/runner/.cache/puppeteer" ]; then
+  CHROME_BIN=$(find "/home/runner/.cache/puppeteer" \
+    \( -name "chrome-headless-shell" -o -name "chrome" \) -type f 2>/dev/null | head -1)
+fi
+
+# Prioritas 3: system chromium
+if [ -z "$CHROME_BIN" ]; then
+  for p in /usr/bin/chromium-browser /usr/bin/chromium /usr/bin/google-chrome; do
+    if [ -f "$p" ]; then CHROME_BIN="$p"; break; fi
+  done
+fi
+
+# Prioritas 4: auto-install jika tidak ditemukan sama sekali
+if [ -z "$CHROME_BIN" ]; then
+  echo "[start.sh] Chrome tidak ditemukan — auto-install via puppeteer..."
+  PUPPETEER_CACHE_DIR="${SCRIPT_DIR}/.puppeteer_cache" \
+    npx puppeteer browsers install chrome-headless-shell 2>&1 | tail -5
+  CHROME_BIN=$(find "${SCRIPT_DIR}/.puppeteer_cache" \
+    -name "chrome-headless-shell" -type f 2>/dev/null | head -1)
+fi
+
+if [ -n "$CHROME_BIN" ]; then
+  export PUPPETEER_EXECUTABLE_PATH="$CHROME_BIN"
+  echo "[start.sh] Chrome: $CHROME_BIN"
+else
+  echo "[start.sh] WARNING: Chrome binary tidak ditemukan — Puppeteer akan cari sendiri"
+fi
+
+# ── Step 5: Build jika dist/ belum ada ───────────────────────────────────────
+if [ ! -f "${SCRIPT_DIR}/dist/main.js" ]; then
+  echo "[start.sh] dist/main.js belum ada — build dulu..."
+  npm run build
+fi
 
 exec node dist/main.js "$@"

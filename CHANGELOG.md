@@ -4,6 +4,18 @@ Semua perubahan penting pada project ini didokumentasikan di sini.
 
 ---
 
+## [2.10.0] - 2026-07-23
+
+### Fixed
+
+- **KRITIS — `start.sh` hardcode FreeType 2.10.4 menyebabkan Chrome crash (exit 127)**: `harfbuzz-10.2.0` membutuhkan simbol `FT_Get_Transform` yang hanya ada di FreeType ≥2.11. `start.sh` lama hardcode path `freetype-2.10.4` → `symbol lookup error` setiap launch Chrome. Solusi: tulis ulang `start.sh` menjadi **fully dynamic** — gunakan `$REPLIT_LD_LIBRARY_PATH` (di-set Nix, selalu berisi versi terkini) sebagai base, bukan daftar path hardcoded. GBM path di-extract dari `env.json` via Python regex. Hash Nix tidak pernah lagi hardcoded.
+
+- **`start.sh` — libgbm.so.1 tidak ditemukan di deployment**: Environment deployed tidak punya GBM di LD_LIBRARY_PATH default. Kini script extract `mesa-libgbm` path dari `env.json` dan prepend ke `LD_LIBRARY_PATH`. Verifikasi log: `freetype=freetype-2.13.3, gbm=mesa-libgbm-25.0.1` ✓.
+
+- **`start.sh` — Chrome binary search dinamis**: Tidak lagi bergantung pada fallback path hardcoded versi spesifik (`linux-148.0.7778.97`). Kini `find` di `.puppeteer_cache/` dan `~/.cache/puppeteer/` secara version-agnostic. Fallback auto-install via `npx puppeteer browsers install` jika tidak ditemukan sama sekali.
+
+---
+
 ## [2.9.0] - 2026-07-23
 
 ### Fixed
