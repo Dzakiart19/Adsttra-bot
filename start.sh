@@ -8,38 +8,51 @@ cd "$SCRIPT_DIR"
 ENV_JSON="${SCRIPT_DIR}/.cache/replit/nix/env.json"
 
 # ── Step 1: Base LD_LIBRARY_PATH dari REPLIT_LD_LIBRARY_PATH ─────────────────
-# REPLIT_LD_LIBRARY_PATH di-set oleh Nix environment dan selalu berisi path
-# yang benar untuk environment saat ini — termasuk freetype versi baru yang
-# dibutuhkan harfbuzz (mis: 2.13.3 untuk harfbuzz-10.2.0).
+# REPLIT_LD_LIBRARY_PATH di-set oleh Nix environment (freetype, fontconfig, dll).
+# CATATAN: di production autoscale runtime, env var ini ADA tapi mesa/GBM mungkin
+# tidak di-include — di-handle di Step 2b.
 BASE_LD="${REPLIT_LD_LIBRARY_PATH:-}"
 
-# ── Fallback: .nix_env (di-generate saat build/deploy jika env var tidak ada) ─
-# Di environment deployment, REPLIT_LD_LIBRARY_PATH mungkin tidak di-set sebagai
-# env var shell. .nix_env menyimpan path yang di-capture saat build command jalan.
+# ── Fallback: .nix_env (di-capture saat build command jalan) ─────────────────
+# Format: BASE_LD_PATHS|GBM_LIB_PATH
 if [ -z "$BASE_LD" ] && [ -f "${SCRIPT_DIR}/.nix_env" ]; then
   IFS='|' read -r _nix_ld _nix_gbm < "${SCRIPT_DIR}/.nix_env"
   BASE_LD="${_nix_ld:-}"
   echo "[start.sh] REPLIT_LD_LIBRARY_PATH kosong — fallback ke .nix_env"
 fi
 
-# ── Step 2: GBM path dari env.json (tidak ada di REPLIT_LD_LIBRARY_PATH) ─────
-# mesa-libgbm dibutuhkan Chrome tapi tidak di-export via REPLIT_LD_LIBRARY_PATH;
-# harus dicari dari env.json via regex.
+# ── Step 2: GBM path — 3 cara, prioritas berurutan ───────────────────────────
+
 GBM_LIB=""
-if [ -f "$ENV_JSON" ]; then
-  GBM_LIB=$(python3 - <<'PYEOF'
-import json, re, sys
-try:
-    with open('.cache/replit/nix/env.json') as f:
-        raw = f.read()
-    m = re.search(r'/nix/store/[a-z0-9]+-mesa-libgbm[^"\s:]*', raw)
-    if m:
-        p = m.group(0).rstrip('/')
-        print(p + '/lib')
-except Exception:
-    pass
-PYEOF
-  2>/dev/null || true)
+
+# 2a) Cek apakah mesa sudah ada di BASE_LD (kasus dev/lokal normal)
+MESA_IN_BASE=$(echo "${BASE_LD}" | tr ':' '\n' | grep '/mesa-' | head -1)
+if [ -n "$MESA_IN_BASE" ] && [ -f "${MESA_IN_BASE}/libgbm.so.1" ]; then
+  : # GBM sudah ada di BASE_LD — tidak perlu set GBM_LIB terpisah
+fi
+
+# 2b) Baca dari .nix_env (GBM part yang di-save saat build)
+if [ -z "$GBM_LIB" ] && [ -f "${SCRIPT_DIR}/.nix_env" ]; then
+  IFS='|' read -r _nix_ld _nix_gbm < "${SCRIPT_DIR}/.nix_env"
+  if [ -n "${_nix_gbm:-}" ] && [ -f "${_nix_gbm}/libgbm.so.1" ]; then
+    GBM_LIB="${_nix_gbm}"
+  fi
+fi
+
+# 2c) Cari mesa dari Nix store: ls top-level (cepat) + iterasi cek libgbm.so.1
+# Diperlukan di production autoscale: mesa ada di Nix store tapi tidak di REPLIT_LD_LIBRARY_PATH.
+# ls /nix/store hanya listing direktori — tidak rekursif, tidak lambat.
+if [ -z "$GBM_LIB" ] && [ -z "$MESA_IN_BASE" ]; then
+  for _mesa_pkg in $(ls /nix/store 2>/dev/null | grep -E '^[a-z0-9]+-mesa-[0-9]'); do
+    if [ -f "/nix/store/${_mesa_pkg}/lib/libgbm.so.1" ]; then
+      GBM_LIB="/nix/store/${_mesa_pkg}/lib"
+      echo "[start.sh] GBM ditemukan via Nix store: ${_mesa_pkg}"
+      break
+    fi
+  done
+  if [ -z "$GBM_LIB" ]; then
+    echo "[start.sh] WARNING: libgbm.so.1 tidak ditemukan — Chrome mungkin gagal launch"
+  fi
 fi
 
 # ── Step 3: Gabungkan — GBM di-prepend (harus dapat prioritas lebih tinggi) ──
@@ -51,7 +64,10 @@ elif [ -n "$GBM_LIB" ]; then
   export LD_LIBRARY_PATH="${GBM_LIB}${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
 fi
 
-echo "[start.sh] LD_LIBRARY_PATH set (freetype=$(echo "$LD_LIBRARY_PATH" | tr ':' '\n' | grep -o 'freetype-[0-9.]*' | head -1), gbm=$(echo "$GBM_LIB" | grep -o 'mesa-libgbm-[^ /]*' || echo 'none'))"
+# Diagnostik: tampilkan freetype dan mesa/GBM yang aktif
+_ft=$(echo "$LD_LIBRARY_PATH" | tr ':' '\n' | grep -o 'freetype-[0-9.]*' | head -1)
+_gbm=$(echo "$LD_LIBRARY_PATH" | tr ':' '\n' | grep '/mesa-' | grep -o 'mesa-[0-9.]*' | head -1)
+echo "[start.sh] LD_LIBRARY_PATH set (freetype=${_ft:-none}, mesa/gbm=${_gbm:-${GBM_LIB:-none}})"
 
 # ── Step 4: Cari Chrome binary ────────────────────────────────────────────────
 # Hanya scan direktori kecil (JANGAN find /nix/store — terlalu lambat).

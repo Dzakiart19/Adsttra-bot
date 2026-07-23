@@ -1,12 +1,12 @@
 - [UA file handling](ua-file-handling.md) — empty/invalid UA JSON files must be handled gracefully; only most-common.json has real data
 - [ReputationService proxy IP](reputation-proxy-ip.md) — checkIP must query ip-api.com/{host} directly, not bare endpoint (bare = server's own IP, not proxy)
 - [Worker proxy retry](worker-proxy-retry.md) — runWorker() accepts proxyPool; retry logic mirrors local mode (max 5 attempts, proxy error detection)
-- [Chrome library & start.sh](chrome-start-sh.md) — start.sh dynamic LD resolution; mesa-libgbm MERGED into mesa-25.0.7 on stable-25_05; GBM already in REPLIT_LD_LIBRARY_PATH
+- [Chrome library & start.sh](chrome-start-sh.md) — GBM: iterate all mesa-* in /nix/store top-level (not head/tail-1); production autoscale has mesa in store but NOT in REPLIT_LD_LIBRARY_PATH
 - [Chrome launch error detection](chrome-launch-error-detection.md) — "Failed to launch the browser process" is NOT a proxy error; must break retry loop + circuit breaker
 - [Target-site proxy block detection](target-proxy-block-detection.md) — after navigation, check body text for "Anonymous Proxy detected." etc; throw ERR_PROXY to trigger retry loop
 - [Proxy source quality 2026-07-22](proxy-source-quality.md) — live test results: best sources are yakumo(50%), monosans(33%), proxyscrape NL/DE(33%); many sources at 0%
-- [start.sh FreeType fix](start-sh-freetype-fix.md) — harfbuzz needs FreeType ≥2.11; use REPLIT_LD_LIBRARY_PATH as base; GBM regex mesa-libgbm returns empty on stable-25_05 (OK)
-- [Fresh-clone portability](fresh-clone-portability.md) — zero-manual clone+publish rules; package-lock.json NOW committed; .nix_env via printf not Python; autoscale+/health cronjob
+- [start.sh FreeType fix](start-sh-freetype-fix.md) — harfbuzz needs FreeType ≥2.11; use REPLIT_LD_LIBRARY_PATH as base; GBM regex mesa-libgbm returns empty on stable-25_05 (OK, use step 2c instead)
+- [Fresh-clone portability](fresh-clone-portability.md) — zero-manual clone+publish rules; package-lock.json NOW committed; GBM via Nix store iteration in start.sh; autoscale+/health cronjob
 - [Ad warm-up full-page sweep](ad-warmup-sweep.md) — for multi-ad pages (e.g. 10 Adsterra units), warm-up must scroll entire page in viewport-chunk steps, not fixed px; IntersectionObserver only fires when element enters viewport
 - [Proxy Tier 1 CPM strategy](proxy-tier1-cpm.md) — add country-specific sources (US/GB/CA/AU/FR/SE) at top of API_SOURCES list + set next() ratio to 95% Tier1; Firebase targets don't block proxies so pool stays large
-- [Production libgbm fix](production-libgbm-fix.md) — autoscale runtime has no REPLIT_LD_LIBRARY_PATH; fix: capture at BUILD via printf to .nix_env; republish required
+- [Production libgbm fix](production-libgbm-fix.md) — autoscale runtime REPLIT_LD_LIBRARY_PATH omits mesa; fix: iterate ls /nix/store mesa-* to find libgbm.so.1; never use head/tail-1 or find /nix/store
