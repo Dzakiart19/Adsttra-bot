@@ -145,7 +145,12 @@ src/
   - yakumo pre-checked (~50%) · monosans (~33%) · TheSpeedX (~17%) — sumber global, Tier 1 yang lolos tetap masuk `tier1[]`
 - **Rasio pemilihan proxy: 95% Tier 1 / 5% Other** — hampir semua sesi dari negara CPM tinggi
 - **Runtime blacklist** — proxy kena `"Anonymous Proxy detected."` langsung dihapus dari pool
-- **`ip-api.com`** dipanggil HANYA via proxy saat validasi — tidak kena rate limit 45 req/menit
+- **Geo provider fallback chain** (geolocation matching di `TrafficOrchestrator`):
+  - Call langsung dari IP server → berbagi kuota antar sesi
+  - Urutan: **ip-api.com** (45 req/mnt, HTTP) → **FreeIPAPI.com** (60 req/mnt, HTTPS) → **ipapi.co** (1.000 req/hari, HTTPS)
+  - Otomatis pindah ke provider berikutnya jika error/timeout/rate-limit
+  - Log mencatat provider yang berhasil: `provider: 'ip-api.com'` / `'freeipapi.com'` / `'ipapi.co'`
+- **`ip-api.com`** di `ProxyService` dipanggil **via proxy** (bukan dari server langsung) — tidak kena rate limit 45 req/menit; tidak diganti karena satu-satunya provider gratis dengan field `hosting` + `vpn` untuk filter datacenter
 - **Ad warm-up full-page sweep** — bot scroll seluruh halaman dalam chunk 60% viewport untuk trigger IntersectionObserver pada SEMUA ad unit homepage; bukan scroll fixed px
 - **Navigasi Watch Page via modal** — drama card adalah `div.drama-card` (bukan `<a>`), klik card → `openModal()` → tunggu 4s → klik `#watchNowBtn` → `window.location.href` ke `/watch.html`; bukan `a[href*="watch.html"]` yang tidak ada di homepage
 - **Direct Link 2× per sesi** — klik drama card (real DOM click → capture listener) + klik watchNowBtn (real DOM click → capture listener lagi) = 2 Direct Link impression per sesi
