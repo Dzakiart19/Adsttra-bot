@@ -4,6 +4,37 @@ Semua perubahan penting pada project ini didokumentasikan di sini.
 
 ---
 
+## [2.8.0] - 2026-07-23
+
+### Optimized
+
+- **Hemat quota ip-api.com di `ProxyService`**: Urutan validasi dibalik — HTTPS CONNECT dulu, ip-api.com baru dipanggil setelah lolos. Sebelumnya ip-api.com dipanggil di step 1 sehingga seluruh 2800+ proxy (termasuk yang gagal HTTPS CONNECT) mengonsumsi API call. Dengan urutan baru, hanya proxy yang lolos HTTPS CONNECT (~30%) yang sampai ke ip-api.com → hemat ~70% API calls.
+
+- **Filter hosting/VPN/datacenter saat validasi**: `validateProxyFull()` sekarang request field `hosting` dan `vpn` dari ip-api.com. Proxy dengan `hosting:true` atau `vpn:true` langsung ditolak di tahap validasi — tidak masuk pool sama sekali. Sebelumnya hanya di-cek saat runtime (boros quota, terlambat).
+
+### Removed
+
+- **`ReputationService.checkIP()` dari runtime `main.ts`**: Dihapus dari kedua lokasi (worker mode dan local loop). Tidak diperlukan lagi karena proxy sudah difilter hosting/VPN di tahap validasi. Sebelumnya memanggil ip-api.com langsung dari IP server (bukan via proxy) → kena rate limit 45 req/menit saat banyak sesi berjalan bersamaan.
+
+### Fixed
+
+- **TypeScript scope bug di `runWorker()`**: Variabel `p` (ProxyEntry) dideklarasikan di dalam `if` block tapi dipakai di `catch` block di luar scope → error `TS2304: Cannot find name 'p'` yang menyebabkan deployment build gagal.
+
+---
+
+## [2.7.0] - 2026-07-23
+
+### Added
+
+- **3-layer proxy optimization** (solusi untuk proxy failure rate tinggi):
+  - **Layer 1 — Relax reputation check**: Hanya block `hosting:true` / `vpn:true` (datacenter jelas). `proxy:true` residential dibiarkan lolos ke Chrome — sebelumnya ikut diblok padahal bisa jalan.
+  - **Layer 2 — Target-site probe saat validasi**: Test HTTPS ke target site sebagai tahap 3 validasi di `ProxyService` — filter proxy yang pasti kena `"Anonymous Proxy detected."` sebelum masuk pool, bukan saat session sudah berjalan.
+  - **Layer 3 — Runtime blacklist**: Proxy yang kena blokir target site saat session (`ERR_PROXY` / `"Anonymous Proxy detected."`) langsung dihapus dari pool (`blacklistProxy()`) — tidak masuk rotasi di session berikutnya.
+
+- **`ProxyService.blacklistProxy(host, port)`**: Method baru untuk menghapus proxy dari pool secara permanen selama proses bot berjalan. Dipanggil dari `main.ts` saat session error terdeteksi sebagai target-site block.
+
+---
+
 ## [2.6.0] - 2026-07-22
 
 ### Changed

@@ -135,17 +135,17 @@ src/
 - **Redis opsional** — tanpa Redis, bot fallback ke sequential lokal (mode `both`)
 - **`proxy_cache.json`** jangan di-commit (sudah ada di `.gitignore`) — TTL 6 jam
 - **Proxy pool** dibagi dua tier: `tier1[]` (US/GB/CA/AU/DE/NL/FR/SE/DK/FI/JP/KR/dll) dan `other[]` — `next()` ambil 70% dari Tier 1
-- **Proxy validation** dua jalur: HTTP GET ip-api.com (cek konektivitas + country); HTTPS CONNECT google.com:443 (wajib lolos keduanya)
+- **Proxy validation 3 tahap** (urutan dioptimalkan hemat quota ip-api.com):
+  1. **HTTPS CONNECT** `google.com:443` — murah, tanpa API; filter ~70% proxy di sini
+  2. **ip-api.com via proxy** — dapat country + filter `hosting`/`VPN`/`datacenter` langsung saat validasi
+  3. **Target-site probe** (HTTPS ke target) — filter proxy yang pasti kena blokir sebelum masuk pool
 - **Background refresh** setiap 2 jam — fetch ulang semua sumber, tambah proxy baru ke pool tanpa restart
-- **Urutan sumber proxy** berdasarkan hasil live test (2-step: HTTP ip-api.com + HTTPS CONNECT google:443):
-  - **Tier A** (diproses PERTAMA, ≥33% pass rate): proxyscrape NL (50%), monosans (33%), proxyscrape US (33%), zevtyardt (33%)
-  - **Tier B** (17% pass rate): spys.me, proxyscrape FR, geonode elite, yakumo checked, TheSpeedX, proxyscrape JP
-  - **Tier C** (0% di test, potensi kecil): proxyscrape GB/DE/CA/AU/SE/DK/FI/KR + sumber campuran lain
-  - **Tier D** (diproses TERAKHIR, konsisten 0%): proxifly semua variant, jetkai/vakhov/almroot (dead saat test), proxyscrape ALL
-  - **Catatan**: proxifly semua variant (country-specific maupun all) = 0% pass rate di live test → dipindah ke Tier D
+- **Sumber proxy aktif** (6 sumber, diurutkan pass rate tertinggi → terendah, live test 2026-07-22):
+  - yakumo pre-checked (~50%), monosans (~33%), proxyscrape NL (~33%), proxyscrape DE (~33%), proxyscrape JP (~17%), TheSpeedX (~17%)
+  - Sumber 0% pass rate telah dihapus dari daftar — buang waktu validasi
+- **Runtime blacklist** — proxy kena `"Anonymous Proxy detected."` saat session langsung dihapus dari pool permanen
+- **`ip-api.com`** dipanggil HANYA via proxy selama validasi (bukan dari IP server langsung) — tidak kena rate limit 45 req/menit di runtime
 - **`proxyPoolSize`** di dashboard di-update tiap awal putaran (bukan hanya saat startup)
-- **`⚠ burnt`** di dashboard = warning informatif, bukan error — bot tetap retry otomatis
-- **`ip-api.com`** free tier limit 45 req/menit — dipakai untuk reputation check sebelum buka browser; `TrafficOrchestrator` TIDAK memanggil checkIP() ulang (sudah di-handle di `main.ts`)
 - **`SESSION_TIME`** dalam **detik** (bukan menit). Default aktif: `10` detik. `random` = 30–45 detik jika tidak butuh throughput tinggi
 - **Sesi < 60 detik** otomatis pakai 1 step (bukan 4) agar timer dashboard menampilkan durasi penuh
 - **`HEADLESS=false`** tidak menampilkan UI browser di Replit (server tanpa display)
@@ -154,19 +154,22 @@ src/
 
 ---
 
-## Bug Fix Log (Juli 2026)
+## Fix & Improvement Log (Juli 2026)
 
-7 bug diidentifikasi dan sudah di-fix (build verified clean):
-
-| # | File | Bug | Severity | Status |
-|---|---|---|---|---|
-| 1 | `UserAgentService.ts` | NULL deref jika file UA kosong → `selected.ua` crash | HIGH | ✅ Fixed |
-| 2 | `ReputationService.ts` | Cache tanpa TTL — proxy berubah reputasi tidak pernah di-recheck | HIGH | ✅ Fixed |
-| 3 | `TrafficOrchestrator.ts` | Fire-and-forget `checkIP()` tanpa await — buang kuota ip-api.com + race condition | MEDIUM | ✅ Fixed |
-| 4 | `TrafficOrchestrator.ts` | Duration drift — warmup (5-8s) + navigate tidak dikurangi dari dwell time | MEDIUM | ✅ Fixed |
-| 5 | `config.ts` | `SESSION_TIME` default `'3'`, tidak sinkron dengan docs (`10`) | MEDIUM | ✅ Fixed |
-| 6 | `config.ts` | `PROXY_URL` tidak strip protokol `http://` — bisa break proxy string | MEDIUM | ✅ Fixed |
-| 7 | `DashboardServer.ts` | Tidak ada SSE heartbeat — hung client tidak terdeteksi | LOW | ✅ Fixed |
+| # | File | Perubahan | Status |
+|---|---|---|---|
+| 1 | `UserAgentService.ts` | NULL deref jika file UA kosong → crash | ✅ Fixed |
+| 2 | `ReputationService.ts` | Cache tanpa TTL — proxy berubah reputasi tidak pernah di-recheck | ✅ Fixed |
+| 3 | `TrafficOrchestrator.ts` | Fire-and-forget `checkIP()` tanpa await — race condition | ✅ Fixed |
+| 4 | `TrafficOrchestrator.ts` | Duration drift — warmup + navigate tidak dikurangi dari dwell time | ✅ Fixed |
+| 5 | `config.ts` | `SESSION_TIME` default `'3'`, tidak sinkron dengan docs (`10`) | ✅ Fixed |
+| 6 | `config.ts` | `PROXY_URL` tidak strip protokol `http://` — bisa break proxy string | ✅ Fixed |
+| 7 | `DashboardServer.ts` | Tidak ada SSE heartbeat — hung client tidak terdeteksi | ✅ Fixed |
+| 8 | `ProxyService.ts` | Tambah target-site probe (tahap 3) + runtime blacklist (Layer 3) | ✅ Added |
+| 9 | `ProxyService.ts` | Ubah urutan validasi: HTTPS CONNECT dulu → ip-api.com — hemat ~70% quota | ✅ Optimized |
+| 10 | `ProxyService.ts` | ip-api.com sekarang request fields `hosting+vpn` → filter datacenter saat validasi | ✅ Optimized |
+| 11 | `main.ts` | Hapus `ReputationService.checkIP()` runtime — tidak perlu lagi, proxy sudah pre-filtered | ✅ Removed |
+| 12 | `main.ts` | Fix scope bug TypeScript: variabel `p` di `runWorker()` keluar dari scope di catch block | ✅ Fixed |
 
 ---
 

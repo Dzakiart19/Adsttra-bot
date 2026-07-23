@@ -114,7 +114,7 @@ Salin `.env.example` dan sesuaikan, atau set langsung di tab Secrets Replit.
 | `SESSIONS_DATA_DIR`          | `./sessions`               | Direktori penyimpanan profil sesi persisten                       |
 | `BOT_ROLE`                   | `both`                     | Role eksekusi: `producer`, `worker`, atau `both`                  |
 | `REDIS_URL`                  | `redis://127.0.0.1:6379`   | URL Redis untuk distributed queue (opsional)                      |
-| `USE_FREE_PROXIES`           | `false`                    | Aktifkan auto-scrape + validasi proxy gratis                      |
+| `USE_FREE_PROXIES`           | `true`                     | Aktifkan auto-scrape + validasi proxy gratis                      |
 | `PROXY_VALIDATE_CONCURRENCY` | `40`                       | Jumlah worker validasi proxy paralel                              |
 | `PROXY_URL`                  | -                          | Proxy statis (host/IP)                                            |
 | `PROXY_PORT`                 | -                          | Port proxy statis                                                 |
@@ -128,6 +128,9 @@ Salin `.env.example` dan sesuaikan, atau set langsung di tab Secrets Replit.
 | `SEARCH_PAGES_LIMIT`         | `1`                        | Maksimal halaman hasil pencarian yang ditelusuri (1–10)           |
 | `REFERRER_POOL`              | -                          | Referrer custom, pisah koma                                       |
 | `MATCH_GEOLOCATION`          | `false`                    | Sinkronkan geolokasi browser dengan IP proxy                      |
+| `WEBSHARE_PROXY_LIST`        | -                          | Daftar proxy Webshare format `host:port:user:pass,...` (prioritas utama) |
+| `WEBSHARE_MAX_FAILURES`      | `10`                       | Gagal berturut sebelum fallback permanen ke scraped proxies       |
+| `TARGET_IMPRESSIONS`         | `0`                        | Stop otomatis setelah N sesi sukses. `0` = tidak ada target       |
 | `LOG_LEVEL`                  | `info`                     | Level log: `error`, `warn`, `info`, `debug`                       |
 | `NODE_ENV`                   | `development`              | Environment: `development`, `production`, `test`                  |
 
@@ -142,9 +145,9 @@ Bot mendukung tiga mode proxy:
 ### 1. Free Proxy Pool (Otomatis)
 
 Set `USE_FREE_PROXIES=true`. Bot akan:
-1. Scrape proxy dari **19 sumber publik** (~35.000+ proxy unik)
-2. Validasi concurrent — proxy **Tier 1** (country sudah diketahui) pakai fast-path validator; proxy general pakai full ip-api.com check
-3. Pool dibagi dua: **Tier 1** (US, GB, DE, NL, FR, FI, JP, KR, …) dan **Other**
+1. Scrape proxy dari **6 sumber publik** (diurutkan pass rate tertinggi → terendah)
+2. Validasi **3 tahap** secara concurrent — hanya proxy lolos semua tahap yang masuk pool
+3. Pool dibagi dua: **Tier 1** (US, GB, CA, AU, DE, NL, FR, SE, JP, KR, …) dan **Other**
 4. `next()` mengambil **70% dari Tier 1**, 30% dari Other
 5. Simpan ke `proxy_cache.json` (TTL 6 jam) — restart berikutnya langsung pakai cache
 6. **Background refresh setiap 2 jam** — fetch ulang semua sumber, tambah proxy baru ke pool (tanpa restart)
@@ -154,24 +157,28 @@ USE_FREE_PROXIES=true
 PROXY_VALIDATE_CONCURRENCY=40
 ```
 
-**Sumber Tier 1 country-specific** (ProxyScrape, filter per negara):
+**Sumber proxy** (diurutkan berdasarkan pass rate live test, 2026-07-22):
 
-| Negara | Estimasi |
-|--------|----------|
-| 🇬🇧 GB | ~2.000 |
-| 🇺🇸 US | ~300 |
-| 🇳🇱 NL | ~90 |
-| 🇩🇪 DE | ~55 |
-| 🇫🇮 FI | ~35 |
-| 🇫🇷 FR | ~15 |
-| 🇯🇵 JP | ~20 |
-| 🇰🇷 KR | ~18 |
+| Sumber | Pass Rate | Keterangan |
+|--------|-----------|------------|
+| yakumo pre-checked | ~50% | Pre-validated list — hanya proxy yang respond saat list dibuat |
+| monosans/proxy-list HTTP | ~33% | Latency cepat (~375ms avg) |
+| proxyscrape NL 🇳🇱 | ~33% | Country-tagged, skip ip-api.com untuk detect country |
+| proxyscrape DE 🇩🇪 | ~33% | Country-tagged |
+| proxyscrape JP 🇯🇵 | ~17% | Latency sangat cepat (~363ms avg) |
+| TheSpeedX/PROXY-List | ~17% | Volume besar, ada residential GB |
 
-**Sumber general** (11 sumber, semua negara, country di-detect saat validasi): proxyscrape all, monosans, clarketm, ShiftyTR, roosterkid, sunny9577, TheSpeedX, zevtyardt, ErcinDedeoglu, Anonym0usWork1221, proxifly.
+**Validasi 3 tahap** (dioptimalkan untuk hemat quota ip-api.com):
 
-**Retry logic**: tiap sesi coba maks 5 proxy berbeda → sesi di-skip jika semua proxy burnt/gagal (tanpa fallback direct).
+| Tahap | Tes | Keterangan |
+|-------|-----|------------|
+| 1 | **HTTPS CONNECT** `google.com:443` | Murah, tanpa API call — filter ~70% proxy di sini |
+| 2 | **ip-api.com** via proxy | Dapat country + filter `hosting`/`VPN`/`datacenter`. Hanya proxy lolos tahap 1 yang sampai sini |
+| 3 | **Target-site probe** (HTTPS ke target) | Filter proxy yang pasti kena `"Anonymous Proxy detected."` sebelum masuk pool |
 
-**⚠ burnt warning**: jika proxy terdeteksi sebagai `hosting`, `vpn`, atau `proxy` oleh ip-api.com, proxy **di-skip tanpa membuka browser** — lebih efisien. Bot langsung coba proxy berikutnya dari pool.
+**Retry logic**: tiap sesi coba maks 5 proxy berbeda → sesi di-skip jika semua proxy gagal (tanpa fallback direct).
+
+**Runtime blacklist**: proxy yang terkena blokir saat session langsung dihapus permanen dari pool — tidak masuk rotasi lagi di putaran berikutnya.
 
 **Target-site block detection**: setelah navigasi, bot membaca body text halaman. Jika target site menampilkan halaman blokir (`"Anonymous Proxy detected."`, `"Access denied"`, dll), bot segera retry ke proxy berikutnya tanpa membuang durasi sesi penuh.
 
@@ -302,14 +309,15 @@ src/
     │   ├── UserAgentService.ts         # Rotasi UA dari useragent/most-common.json
     │   └── ReferrerService.ts          # Manajemen referrer + search engine homepage
     ├── proxy/
-    │   └── ProxyService.ts             # Scrape, validasi streaming, cache proxy
+    │   ├── ProxyService.ts             # Scrape, validasi 3-tahap streaming, cache proxy
+    │   └── WebshareProxyService.ts     # Webshare premium proxy (prioritas utama)
     ├── queue/
     │   └── QueueService.ts             # BullMQ/Redis wrapper + fallback lokal
     ├── monitoring/
     │   ├── DashboardServer.ts          # HTTP server + SSE dashboard + /health
     │   ├── MetricsService.ts           # Singleton metrics tracker
     │   ├── StateService.ts             # Live state EventEmitter → SSE broadcast
-    │   └── ReputationService.ts        # Cek reputasi IP proxy via ip-api.com
+    │   └── ReputationService.ts        # Query ip-api.com untuk geolokasi proxy (dipakai TrafficOrchestrator)
     ├── logging/
     │   └── logger.ts                   # Winston + dashboard transport
     └── config/
