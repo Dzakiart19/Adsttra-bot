@@ -30,13 +30,39 @@ export class ReferrerService {
 
   constructor(private readonly logger: Logger) {}
 
+  // ── Alias pendek → URL lengkap ─────────────────────────────────────────────
+  // Pengguna boleh set REFERRER_POOL=google,facebook,youtube (lebih mudah dibaca)
+  // dan kode akan expand ke URL lengkap sebelum di-set sebagai Referer header.
+  private static readonly REFERRER_ALIASES: Record<string, string> = {
+    'google':    'https://www.google.com/',
+    'google.com':'https://www.google.com/',
+    'bing':      'https://www.bing.com/',
+    'yahoo':     'https://www.yahoo.com/',
+    'facebook':  'https://www.facebook.com/',
+    'instagram': 'https://www.instagram.com/',
+    'twitter':   'https://twitter.com/',
+    'x.com':     'https://x.com/',
+    't.co':      'https://t.co/',
+    'youtube':   'https://www.youtube.com/',
+    'tiktok':    'https://www.tiktok.com/',
+    'reddit':    'https://www.reddit.com/',
+    'pinterest': 'https://www.pinterest.com/',
+    'linkedin':  'https://www.linkedin.com/',
+    'quora':     'https://www.quora.com/',
+    'telegram':  'https://web.telegram.org/',
+    'whatsapp':  'https://web.whatsapp.com/',
+  };
+
   /**
    * Returns a random high-authority referrer URL.
+   * Supports short aliases (e.g. "google") or full URLs (e.g. "https://www.google.com/").
    */
   getRandomReferrer(customPool: string[] = []): string {
     const pool = customPool.length > 0 ? customPool : ReferrerService.DEFAULT_REFERRERS;
     const index = Math.floor(Math.random() * pool.length);
-    return pool[index];
+    const raw = pool[index].trim().toLowerCase();
+    // Expand alias ke URL lengkap jika ada; jika tidak, kembalikan nilai asli
+    return ReferrerService.REFERRER_ALIASES[raw] ?? pool[index];
   }
 
   /**

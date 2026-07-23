@@ -147,11 +147,19 @@ export class PuppeteerStealthEngine implements BrowserEngine {
         const platform = options.platform === 'MacIntel' ? 'macOS' : 
                          options.platform === 'Win32' ? 'Windows' : 'Linux';
 
-        await this.page.setExtraHTTPHeaders({
+        const extraHeaders: Record<string, string> = {
           'sec-ch-ua': `"Not(A:Brand";v="99", "Google Chrome";v="${majorVersion}", "Chromium";v="${majorVersion}"`,
           'sec-ch-ua-mobile': isMobile ? '?1' : '?0',
           'sec-ch-ua-platform': `"${platform}"`,
-        });
+        };
+
+        // Set Accept-Language header sesuai fingerprint negara proxy
+        // Penting agar sinyal browser konsisten: navigator.languages === Accept-Language
+        if (options.acceptLanguage) {
+          extraHeaders['Accept-Language'] = options.acceptLanguage;
+        }
+
+        await this.page.setExtraHTTPHeaders(extraHeaders);
       }
     }
 

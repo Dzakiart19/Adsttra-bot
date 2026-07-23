@@ -8,6 +8,7 @@ export interface Fingerprint {
   deviceMemory: number;
   platform: string;
   languages: string[];
+  acceptLanguage: string;   // formatted Accept-Language header value
   webgl: {
     vendor: string;
     renderer: string;
@@ -17,48 +18,156 @@ export interface Fingerprint {
 export class FingerprintService {
   private static GPU_PROFILES = [
     { vendor: 'Google Inc. (Intel)', renderer: 'ANGLE (Intel, Intel(R) UHD Graphics 620 Direct3D11 vs_5_0 ps_5_0)' },
+    { vendor: 'Google Inc. (Intel)', renderer: 'ANGLE (Intel, Intel(R) UHD Graphics 630 Direct3D11 vs_5_0 ps_5_0)' },
     { vendor: 'Google Inc. (NVIDIA)', renderer: 'ANGLE (NVIDIA, NVIDIA GeForce GTX 1050 Ti Direct3D11 vs_5_0 ps_5_0)' },
+    { vendor: 'Google Inc. (NVIDIA)', renderer: 'ANGLE (NVIDIA, NVIDIA GeForce RTX 3060 Direct3D11 vs_5_0 ps_5_0)' },
     { vendor: 'Google Inc. (AMD)', renderer: 'ANGLE (AMD, Radeon(TM) RX 580 Series Direct3D11 vs_5_0 ps_5_0)' },
+    { vendor: 'Google Inc. (AMD)', renderer: 'ANGLE (AMD, AMD Radeon RX 6600 XT Direct3D11 vs_5_0 ps_5_0)' },
     { vendor: 'Apple Inc.', renderer: 'Apple M1' },
+    { vendor: 'Apple Inc.', renderer: 'Apple M2' },
     { vendor: 'Intel Inc.', renderer: 'Intel(R) Iris(TM) Plus Graphics 640' },
+    { vendor: 'Intel Inc.', renderer: 'Intel(R) Iris(R) Xe Graphics' },
   ];
 
-  static generate(): Fingerprint {
-    // 1. Resolve host platform to guide initial selection
-    const hostPlatform = process.platform; // 'darwin', 'win32', 'linux'
-    
-    // 2. Get random UA matching the host platform (or random if not matched)
-    const { ua, platform: uaPlatform } = UserAgentService.getRandomUA('most-common', hostPlatform);
-    
-    // 3. Resolve navigator.platform based on UA
-    let navPlatform = 'Win32';
-    if (ua.includes('Macintosh')) navPlatform = 'MacIntel';
-    if (ua.includes('Linux')) navPlatform = 'Linux x86_64';
+  // ── Resolusi layar desktop yang paling umum (data StatCounter 2025) ─────────
+  private static SCREEN_RESOLUTIONS = [
+    { weight: 25, w: 1920, h: 1080 },  // #1 — paling umum
+    { weight: 18, w: 1366, h: 768  },  // #2 — laptop budget
+    { weight: 12, w: 1440, h: 900  },  // #3 — MacBook Air
+    { weight: 10, w: 1536, h: 864  },  // #4 — Surface/laptop scaling
+    { weight:  8, w: 1280, h: 800  },  // #5 — MacBook Pro lama
+    { weight:  7, w: 1280, h: 720  },  // #6
+    { weight:  6, w: 1600, h: 900  },  // #7
+    { weight:  5, w: 2560, h: 1440 },  // #8 — 2K monitor
+    { weight:  4, w: 1680, h: 1050 },  // #9
+    { weight:  3, w: 1920, h: 1200 },  // #10 — widescreen
+    { weight:  2, w: 2560, h: 1600 },  // #11 — MacBook Pro 16"
+  ];
 
-    // 4. Pick a realistic GPU based on the resolved platform
+  // ── Mapping country → navigator.languages ────────────────────────────────────
+  private static COUNTRY_LANGUAGES: Record<string, string[]> = {
+    // English-only Tier 1
+    US: ['en-US', 'en'],
+    GB: ['en-GB', 'en', 'en-US'],
+    AU: ['en-AU', 'en', 'en-US'],
+    NZ: ['en-NZ', 'en', 'en-US'],
+    IE: ['en-IE', 'en', 'en-US'],
+    SG: ['en-SG', 'en', 'en-US'],
+    // Bilingual
+    CA: ['en-CA', 'en', 'fr-CA', 'fr'],
+    BE: ['nl-BE', 'nl', 'fr-BE', 'fr', 'en-US', 'en'],
+    CH: ['de-CH', 'de', 'fr-CH', 'fr', 'en-US', 'en'],
+    // Western Europe
+    DE: ['de-DE', 'de', 'en-US', 'en'],
+    AT: ['de-AT', 'de', 'en-US', 'en'],
+    FR: ['fr-FR', 'fr', 'en-US', 'en'],
+    NL: ['nl-NL', 'nl', 'en-US', 'en'],
+    SE: ['sv-SE', 'sv', 'en-US', 'en'],
+    NO: ['nb-NO', 'nb', 'en-US', 'en'],
+    DK: ['da-DK', 'da', 'en-US', 'en'],
+    FI: ['fi-FI', 'fi', 'en-US', 'en'],
+    // Asia Pacific
+    JP: ['ja-JP', 'ja', 'en-US', 'en'],
+    KR: ['ko-KR', 'ko', 'en-US', 'en'],
+  };
+
+  /**
+   * Generate a randomized, consistent browser fingerprint.
+   *
+   * @param country  ISO 3166-1 alpha-2 (e.g. "US", "DE") from proxy country tag.
+   *                 Used to set realistic navigator.languages + Accept-Language.
+   */
+  static generate(country?: string): Fingerprint {
+    // ── Platform: SELALU desktop Windows atau Mac — JANGAN pakai process.platform ──
+    // Replit berjalan di Linux. Menggunakan process.platform akan menghasilkan
+    // UA Linux (X11; Linux x86_64) yang aneh bagi pengiklan. Linux desktop hanya
+    // ~2% pasar global — jauh kurang bernilai dari Windows (~75%) atau Mac (~15%).
+    // Distribusi target: 70% Windows, 30% Mac — sesuai statistik desktop 2025.
+    const useWindows = Math.random() < 0.70;
+    const targetPlatform = useWindows ? 'win32' : 'darwin';
+
+    const { ua } = UserAgentService.getRandomUA('most-common', targetPlatform);
+
+    // Resolve navigator.platform berdasarkan UA aktual (bukan platform OS server)
+    let navPlatform = 'Win32';
+    if (ua.includes('Macintosh') || ua.includes('Mac OS X')) navPlatform = 'MacIntel';
+    // Fallback jika UA file berisi Linux (tidak ideal tapi tetap konsisten)
+    if (ua.includes('X11; Linux') || ua.includes('Linux x86_64')) navPlatform = 'Linux x86_64';
+
+    // ── GPU: pilih berdasarkan platform yang terdeteksi dari UA ──────────────
     let gpuPool = this.GPU_PROFILES;
     if (navPlatform === 'MacIntel') {
       gpuPool = this.GPU_PROFILES.filter(p => p.vendor.includes('Apple') || p.vendor.includes('Intel'));
     } else if (navPlatform === 'Win32') {
-      gpuPool = this.GPU_PROFILES.filter(p => p.vendor.includes('Google') || p.vendor.includes('NVIDIA'));
+      gpuPool = this.GPU_PROFILES.filter(p =>
+        p.vendor.includes('Google') || p.vendor.includes('Intel Inc')
+      );
     }
-
     const webgl = gpuPool[Math.floor(Math.random() * gpuPool.length)];
+
+    // ── Resolusi: weighted random berdasarkan distribusi StatCounter ─────────
+    const viewport = this.pickViewport();
+
+    // ── Language: sesuaikan ke negara proxy ──────────────────────────────────
+    const languages = this.getLanguagesForCountry(country);
+    const acceptLanguage = this.buildAcceptLanguage(languages);
+
+    // ── Hardware: distribusi realistis ────────────────────────────────────────
+    const hardwareConcurrency = [4, 8, 8, 8, 12, 16][Math.floor(Math.random() * 6)];
+    const deviceMemory = [8, 8, 16, 16][Math.floor(Math.random() * 4)];
 
     return {
       userAgent: ua,
-      viewport: {
-        width: 1280 + Math.floor(Math.random() * 200),
-        height: 720 + Math.floor(Math.random() * 200),
-      },
-      deviceScaleFactor: Math.random() > 0.5 ? 1 : 2,
-      hardwareConcurrency: [4, 8, 12, 16][Math.floor(Math.random() * 4)],
-      deviceMemory: [8, 16][Math.floor(Math.random() * 2)],
+      viewport,
+      deviceScaleFactor: navPlatform === 'MacIntel' ? 2 : 1,
+      hardwareConcurrency,
+      deviceMemory,
       platform: navPlatform,
-      languages: ['en-US', 'en'],
+      languages,
+      acceptLanguage,
       webgl,
     };
   }
+
+  // ── Private helpers ─────────────────────────────────────────────────────────
+
+  private static pickViewport(): { width: number; height: number } {
+    const totalWeight = this.SCREEN_RESOLUTIONS.reduce((s, r) => s + r.weight, 0);
+    let rand = Math.random() * totalWeight;
+    for (const res of this.SCREEN_RESOLUTIONS) {
+      rand -= res.weight;
+      if (rand <= 0) {
+        // Sedikit variasi ±8px agar fingerprint tidak identik
+        return {
+          width:  res.w + Math.floor(Math.random() * 16) - 8,
+          height: res.h + Math.floor(Math.random() * 16) - 8,
+        };
+      }
+    }
+    return { width: 1920, height: 1080 };
+  }
+
+  private static getLanguagesForCountry(country?: string): string[] {
+    if (country && this.COUNTRY_LANGUAGES[country]) {
+      return this.COUNTRY_LANGUAGES[country];
+    }
+    // Default ke en-US untuk country unknown (lebih baik daripada bahasa salah)
+    return ['en-US', 'en'];
+  }
+
+  /**
+   * Ubah array bahasa menjadi header Accept-Language RFC 7231:
+   *   ['de-DE', 'de', 'en-US', 'en']  →  "de-DE,de;q=0.9,en-US;q=0.8,en;q=0.7"
+   */
+  private static buildAcceptLanguage(languages: string[]): string {
+    return languages.map((lang, i) => {
+      if (i === 0) return lang;
+      const q = Math.max(0.1, 1 - i * 0.1).toFixed(1);
+      return `${lang};q=${q}`;
+    }).join(',');
+  }
+
+  // ── Injection script ────────────────────────────────────────────────────────
 
   static getInjectionScript(fingerprint: Fingerprint): string {
     return `
@@ -106,9 +215,9 @@ export class FingerprintService {
         overwriteProperty(screen, 'width', screenWidth);
         overwriteProperty(screen, 'height', screenHeight);
         overwriteProperty(screen, 'availWidth', screenWidth);
-        overwriteProperty(screen, 'availHeight', screenHeight);
+        overwriteProperty(screen, 'availHeight', screenHeight - 40);
         overwriteProperty(window, 'innerWidth', screenWidth);
-        overwriteProperty(window, 'innerHeight', screenHeight);
+        overwriteProperty(window, 'innerHeight', screenHeight - 80);
         overwriteProperty(window, 'outerWidth', screenWidth);
         overwriteProperty(window, 'outerHeight', screenHeight);
         overwriteProperty(window, 'devicePixelRatio', ${fingerprint.deviceScaleFactor});

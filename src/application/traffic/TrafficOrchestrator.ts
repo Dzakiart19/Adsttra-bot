@@ -41,7 +41,8 @@ export class TrafficOrchestrator {
         userDataDir: config.userDataDir,
         headless: options.headless,
         platform: options.platform,
-        fingerprintScript: options.fingerprintScript
+        fingerprintScript: options.fingerprintScript,
+        acceptLanguage: options.acceptLanguage,
       });
 
       // 1. Geolocation Matching
@@ -333,7 +334,9 @@ export class TrafficOrchestrator {
 
   async runFromJob(jobId: string, data: any): Promise<void> {
     const { FingerprintService } = require('../../infrastructure/browser/FingerprintService');
-    const fingerprint = FingerprintService.generate();
+    // data.proxy.country tersedia jika producer menyertakannya (distributed mode)
+    const country: string | undefined = data.proxy?.country;
+    const fingerprint = FingerprintService.generate(country);
 
     const session = new Session({
       id: jobId,
@@ -349,7 +352,8 @@ export class TrafficOrchestrator {
     await this.run(session, {
       headless: Config.HEADLESS,
       platform: fingerprint.platform,
-      fingerprintScript: FingerprintService.getInjectionScript(fingerprint)
+      fingerprintScript: FingerprintService.getInjectionScript(fingerprint),
+      acceptLanguage: fingerprint.acceptLanguage,
     });
   }
 

@@ -219,10 +219,11 @@ async function bootstrap() {
                 action: `Memulai sesi R${round}·S${i+1} attempt ${attempt+1} via proxy...`,
               });
 
-              const fingerprint = FingerprintService.generate();
+              // Pass proxy country agar fingerprint (language, UA platform) sesuai geo
+              const fingerprint = FingerprintService.generate(p.country);
               const proxyConfig = { server: proxyStr };
 
-              logger.info(`[R${round}·S${i+1}/${Config.MAX_SESSIONS}] Attempt ${attempt + 1}/${MAX_PROXY_RETRIES} (proxy) — ${proxyStr}`);
+              logger.info(`[R${round}·S${i+1}/${Config.MAX_SESSIONS}] Attempt ${attempt + 1}/${MAX_PROXY_RETRIES} (proxy) — ${proxyStr} [${p.country ?? '??'}] lang=${fingerprint.acceptLanguage.split(',')[0]}`);
               StateService.update({
                 action: `Memulai sesi R${round}·S${i+1} attempt ${attempt+1} via proxy...`,
               });
@@ -240,7 +241,8 @@ async function bootstrap() {
                 }), {
                   headless: Config.HEADLESS,
                   platform: fingerprint.platform,
-                  fingerprintScript: FingerprintService.getInjectionScript(fingerprint)
+                  fingerprintScript: FingerprintService.getInjectionScript(fingerprint),
+                  acceptLanguage: fingerprint.acceptLanguage,
                 });
                 sessionSuccess = true;
                 consecutiveChromeFails = 0; // reset circuit breaker saat sesi berhasil
