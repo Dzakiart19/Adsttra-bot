@@ -54,8 +54,9 @@ async function runWorker(proxyPool?: ProxyService) {
 
     for (let attempt = 0; attempt < MAX_PROXY_RETRIES && !sessionSuccess; attempt++) {
       let jobData: TrafficJobData = job.data;
+      let p: import('./infrastructure/proxy/ProxyService').ProxyEntry | undefined;
       if (proxyPool && proxyPool.size > 0) {
-        const p = proxyPool.next()!;
+        p = proxyPool.next()!;
         const proxyStr = `${p.host}:${p.port}`;
 
         // ── Reputation pre-check: skip datacenter/VPN proxy sebelum buka browser ──
@@ -93,7 +94,7 @@ async function runWorker(proxyPool?: ProxyService) {
         );
         if (isProxyErr && proxyPool && proxyPool.size > 0 && attempt < MAX_PROXY_RETRIES - 1) {
           // Blacklist jika target site yang memblok
-          if (err.message?.includes('Anonymous Proxy detected') || err.message?.includes('ERR_PROXY')) {
+          if (p && (err.message?.includes('Anonymous Proxy detected') || err.message?.includes('ERR_PROXY'))) {
             proxyPool.blacklistProxy(p.host, p.port);
           }
           StateService.update({ proxyRetries: StateService.getState().proxyRetries + 1 });
