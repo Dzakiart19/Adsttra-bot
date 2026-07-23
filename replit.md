@@ -10,26 +10,34 @@ Enterprise-grade stealth traffic generation framework. Mensimulasikan kunjungan 
 
 ## Yang Sebenarnya Dilakukan Bot Saat Buka URL Target
 
-Bot **bukan sekadar buka lalu pergi**. Urutan persis tiap sesi (~30 detik):
+Bot **bukan sekadar buka lalu pergi**. Urutan persis tiap sesi (~30–45 detik):
 
 1. **Launch Chromium** dengan 30+ hardening flags + injeksi fingerprint JS (Canvas noise, WebGL palsu, navigator konsisten)
 2. **Set geolocation** sesuai lokasi IP proxy (via ip-api.com)
 3. **Set HTTP Referer** ke salah satu: Google, Facebook, Twitter/X, Instagram, YouTube — dipilih acak per sesi
 4. **Buka URL target** — tunggu event `load`
 5. **Cek proxy block** — baca body text, lempar ERR_PROXY jika ada "Anonymous Proxy detected." dll
-6. **Ad Warm-up — full-page sweep** (kritis untuk Adsterra):
+6. **Ad Warm-up Homepage — full-page sweep** (kritis untuk Adsterra):
    - Tunggu 3s → script Adsterra selesai register `IntersectionObserver`
-   - Scroll **seluruh halaman** turun dalam chunk 60% viewport, pause 700–1100ms tiap langkah — setiap ad unit masuk viewport dan fire impression XHR
+   - Scroll **seluruh halaman** turun dalam chunk 60% viewport, pause 700–1100ms tiap langkah — setiap ad unit masuk viewport dan fire impression XHR (3 banner homepage)
    - Tahan 1.5s di bawah halaman
    - Scroll balik ke tengah perlahan, lalu smooth-scroll ke atas
-7. **Dwell time loop** (sisa waktu dari 30s) — `BehaviorService`:
+7. **Navigasi ke Watch Page** — alur dua klik (Direct Link 2× per sesi):
+   - Cari `div.drama-card:not(.is-skeleton)` yang visible di viewport, scroll instant ke card
+   - **Klik card** dengan `page.mouse.click()` → real DOM click → `document` capture listener Adsterra fire (**Direct Link #1**) + `openModal()` dipanggil
+   - Tunggu 4s → API drama detail `/api/drama/{provider}/{id}` selesai, modal muncul
+   - **Klik `#watchNowBtn`** → real DOM click → Direct Link fire lagi (**Direct Link #2**) + `window.location.href` navigate ke `/watch.html`
+   - Tunggu halaman watch load
+8. **Ad Warm-up Watch Page** — scroll 4 banner slot Adsterra:
+   - Scroll dalam chunk 70% viewport, max 10 langkah
+   - Trigger IntersectionObserver untuk 4 banner slot (1 desktop 468×60, 1 mobile 320×50, 2 episode slot)
+9. **Dwell time loop** (sisa waktu) — `BehaviorService`:
    - Scroll acak 100–500px (5 langkah halus)
    - Mouse move ke posisi acak dalam viewport
    - Reading pause 2–5 detik dengan micro-jitter ±5px
-8. **Contextual click** — scoring semua `<a>` di halaman, klik link bernilai tinggi (About/Product/Blog) secara weighted-random, hindari login/terms/privacy
-9. **Grace period 2–3s** → browser ditutup (beri waktu XHR impression in-flight selesai terkirim)
+10. **Grace period 2–3s** → browser ditutup (beri waktu XHR impression in-flight selesai terkirim)
 
-Dari sisi Adsterra: kunjungan datang dari Google/Facebook, scroll organik melewati semua iklan, dwell time wajar → semua 10 ad unit terindeks.
+Dari sisi Adsterra: kunjungan datang dari Google/Facebook, scroll organik melewati **semua** iklan (homepage + watch page), dwell time wajar → **7 banner + 2 Direct Link** terindeks per sesi.
 
 ---
 
@@ -138,8 +146,11 @@ src/
 - **Rasio pemilihan proxy: 95% Tier 1 / 5% Other** — hampir semua sesi dari negara CPM tinggi
 - **Runtime blacklist** — proxy kena `"Anonymous Proxy detected."` langsung dihapus dari pool
 - **`ip-api.com`** dipanggil HANYA via proxy saat validasi — tidak kena rate limit 45 req/menit
-- **Ad warm-up full-page sweep** — bot scroll seluruh halaman dalam chunk 60% viewport untuk trigger IntersectionObserver pada SEMUA ad unit; bukan scroll fixed px
-- **`SESSION_TIME`** dalam **detik**. Aktif: `30` detik — optimal untuk halaman dengan 10 Adsterra ad unit
+- **Ad warm-up full-page sweep** — bot scroll seluruh halaman dalam chunk 60% viewport untuk trigger IntersectionObserver pada SEMUA ad unit homepage; bukan scroll fixed px
+- **Navigasi Watch Page via modal** — drama card adalah `div.drama-card` (bukan `<a>`), klik card → `openModal()` → tunggu 4s → klik `#watchNowBtn` → `window.location.href` ke `/watch.html`; bukan `a[href*="watch.html"]` yang tidak ada di homepage
+- **Direct Link 2× per sesi** — klik drama card (real DOM click → capture listener) + klik watchNowBtn (real DOM click → capture listener lagi) = 2 Direct Link impression per sesi
+- **scrollIntoView inline:center** — wajib sebelum baca koordinat card; tanpa ini card bisa di luar viewport horizontal dan koordinat x > viewport width → klik tidak register
+- **`SESSION_TIME`** dalam **detik**. Aktif: `30` detik — total sesi bisa 35–50s karena watch page load via proxy lambat, ini normal
 - **Sesi < 60 detik** otomatis pakai 1 step agar timer dashboard menampilkan durasi penuh
 - **`HEADLESS=false`** tidak menampilkan UI browser di Replit (server tanpa display)
 - **Dwell time akurat** — `elapsedBeforeDwell` dikurangi dari `durationMs` agar total sesi tidak melebihi konfigurasi
@@ -176,6 +187,11 @@ src/
 | 16 | Env vars | `DEFAULT_URL` → `dramacina--dzeckart.replit.app`, `SESSION_TIME` → `30`, tambah `REFERRER_POOL` | ✅ Updated |
 | 17 | `ProxyService.ts` | Tambah 6 sumber country-specific Tier 1 (US/GB/CA/AU/FR/SE) di urutan atas | ✅ Added |
 | 18 | `ProxyService.ts` | Naikkan rasio Tier 1 dari 70% → 95% untuk maksimalkan CPM | ✅ Updated |
+| 23 | `TrafficOrchestrator.ts` | Navigasi watch.html via modal: klik `div.drama-card` → tunggu modal → klik `#watchNowBtn` → watch page | ✅ Fixed |
+| 24 | `TrafficOrchestrator.ts` | Direct Link 2× per sesi: klik card (capture #1) + klik watchNowBtn (capture #2) | ✅ Added |
+| 25 | `TrafficOrchestrator.ts` | `scrollIntoView({inline:'center'})` + filter bounds horizontal — fix koordinat x > viewport width | ✅ Fixed |
+| 26 | `TrafficOrchestrator.ts` | Modal wait naikkan 2.5s → 4s untuk akomodasi proxy lambat (API fetch drama detail) | ✅ Fixed |
+| 27 | `TrafficOrchestrator.ts` | Watch page warm-up: trigger 4 banner slot Adsterra via IntersectionObserver (chunk 70% viewport) | ✅ Added |
 
 ---
 

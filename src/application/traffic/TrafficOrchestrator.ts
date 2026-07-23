@@ -353,95 +353,116 @@ export class TrafficOrchestrator {
   }
 
   /**
-   * Cari drama card di halaman saat ini, scroll ke viewport, lalu klik dengan
-   * engine.click() → page.mouse.click() → real MouseEvent → trigger Direct Link Adsterra.
-   * Setelah klik, tunggu navigasi ke /watch.html selesai.
+   * Navigasi ke watch.html via alur modal dramacina:
+   *   1. Klik div.drama-card → trigger Direct Link (document capture listener) + openModal()
+   *   2. Tunggu modal muncul + API fetch selesai (#watchNowBtn tampil)
+   *   3. Klik #watchNowBtn → trigger Direct Link lagi + window.location.href ke watch.html
+   *   4. Tunggu watch.html load
    *
-   * Mengapa pendekatan ini:
-   *   - ads-adsterra.js memasang: document.addEventListener("click", openOnce, true)
-   *   - Direct Link HANYA fire jika ada real DOM click event di capturing phase
-   *   - window.location.href assignment TIDAK mengirim click event → Direct Link mati
-   *   - engine.click(x, y) → page.mouse.click() → real MouseEvent → Direct Link buka tab baru
+   * Mengapa real DOM click (bukan window.location.href):
+   *   - ads-adsterra.js: document.addEventListener("click", openOnce, true)
+   *   - Direct Link HANYA fire saat ada real click yang captured di document
+   *   - Setiap klik card + klik watchNowBtn = 2 Direct Link impression per sesi
    */
   private async navigateToDramaWatch(): Promise<string | null> {
     try {
-      // Step 1: Scroll sedikit ke bawah agar drama card sudah masuk viewport
-      //         (card ada di bawah hero & banner iklan)
-      const firstCardPos: { y: number } | null = await this.engine.evaluate(() => {
-        const link = document.querySelector('a[href*="watch.html"]') as HTMLAnchorElement | null;
-        if (!link) return null;
-        link.scrollIntoView({ behavior: 'smooth', block: 'center' });
-        return { y: window.scrollY };
+      // Step 1: Scroll ke drama card pertama yang ada di DOM
+      const cardFound: boolean = await this.engine.evaluate(() => {
+        const card = document.querySelector('.drama-card:not(.is-skeleton)') as HTMLElement | null;
+        if (!card) return false;
+        card.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        return true;
       });
 
-      if (firstCardPos === null) {
-        logger.debug('[TrafficOrchestrator] Tidak ada watch.html link — skip drama navigation');
+      if (!cardFound) {
+        logger.debug('[TrafficOrchestrator] Tidak ada drama card di DOM — skip watch navigation');
         return null;
       }
-      await this.engine.wait(700);
+      await this.engine.wait(700); // tunggu smooth scroll selesai
 
-      // Step 2: Ambil href + koordinat tengah card yang visible di viewport
-      const cardInfo: { href: string; x: number; y: number } | null = await this.engine.evaluate(() => {
-        const links = Array.from(document.querySelectorAll('a[href*="watch.html"]')) as HTMLAnchorElement[];
-        const inViewport = links.filter(a => {
-          const r = a.getBoundingClientRect();
-          return r.width > 30 && r.height > 30 && r.top >= 0 && r.bottom <= window.innerHeight;
-        });
-        // Pilih acak dari max 10 yang visible
-        const pool = inViewport.length ? inViewport : links.slice(0, 10);
-        if (!pool.length) return null;
-        const pick = pool[Math.floor(Math.random() * Math.min(pool.length, 10))];
-        const rect = pick.getBoundingClientRect();
+      // Step 2: Ambil koordinat drama card yang BENAR-BENAR dalam viewport (horizontal + vertical)
+      //         Gunakan scrollIntoView ulang setelah pick agar koordinat pasti valid
+      const cardPos: { x: number; y: number } | null = await this.engine.evaluate(() => {
+        const cards = Array.from(
+          document.querySelectorAll('.drama-card:not(.is-skeleton)')
+        ) as HTMLElement[];
+        if (!cards.length) return null;
+
+        // Coba tiap card acak dari pool pertama; scroll instant & cek bounds
+        const shuffled = cards.slice(0, 20).sort(() => Math.random() - 0.5);
+        for (const pick of shuffled) {
+          pick.scrollIntoView({ behavior: 'instant', block: 'center', inline: 'center' });
+          const rect = pick.getBoundingClientRect();
+          const inH = rect.top >= 0 && rect.bottom <= window.innerHeight;
+          const inW = rect.left >= 0 && rect.right <= window.innerWidth;
+          if (rect.width > 30 && rect.height > 30 && inH && inW) {
+            return {
+              x: Math.round(rect.left + rect.width  * (0.3 + Math.random() * 0.4)),
+              y: Math.round(rect.top  + rect.height * (0.3 + Math.random() * 0.4)),
+            };
+          }
+        }
+        return null;
+      });
+
+      if (!cardPos) {
+        logger.debug('[TrafficOrchestrator] Drama card tidak visible di viewport — skip');
+        return null;
+      }
+
+      // Step 3: Klik drama card → Direct Link fire (capture) + openModal() dipanggil
+      StateService.update({ action: '🎬 Klik drama card → trigger Direct Link + buka modal...' });
+      logger.info(`[TrafficOrchestrator] Drama card click @ (${cardPos.x}, ${cardPos.y})`);
+      await this.engine.mouseMove(cardPos.x, cardPos.y);
+      await this.engine.wait(120 + Math.floor(Math.random() * 150));
+      try { await this.engine.click(cardPos.x, cardPos.y); } catch { /* navigate may start */ }
+
+      // Step 4: Tunggu modal muncul + API drama detail selesai dimuat
+      //         Modal fetch ke /api/drama/{provider}/{id} lewat proxy bisa sampai 4 detik
+      StateService.update({ action: '⏳ Menunggu modal detail drama muncul...' });
+      await this.engine.wait(4000);
+
+      // Step 5: Ambil koordinat tombol "Tonton Sekarang" (#watchNowBtn) dalam modal
+      const btnPos: { x: number; y: number } | null = await this.engine.evaluate(() => {
+        const btn = document.getElementById('watchNowBtn') as HTMLElement | null;
+        if (!btn) return null;
+        btn.scrollIntoView({ behavior: 'instant', block: 'center' });
+        const rect = btn.getBoundingClientRect();
+        if (rect.width < 10 || rect.height < 10) return null;
         return {
-          href: pick.href,
           x: Math.round(rect.left + rect.width  * (0.3 + Math.random() * 0.4)),
           y: Math.round(rect.top  + rect.height * (0.3 + Math.random() * 0.4)),
         };
       });
 
-      if (!cardInfo) {
-        logger.debug('[TrafficOrchestrator] Tidak ada card visible di viewport — skip');
+      if (!btnPos) {
+        // Modal gagal muncul atau API error — skip watch navigation
+        logger.debug('[TrafficOrchestrator] #watchNowBtn tidak muncul dalam modal — skip');
         return null;
       }
 
-      StateService.update({ action: `🎬 Klik drama card → trigger Direct Link + navigate watch...` });
-      logger.info(`[TrafficOrchestrator] Drama card click @ (${cardInfo.x}, ${cardInfo.y}) → ${cardInfo.href}`);
+      // Step 6: Klik "Tonton Sekarang" → Direct Link fire lagi + window.location.href watch.html
+      StateService.update({ action: '▶️ Klik "Tonton Sekarang" → Direct Link #2 + navigate watch.html...' });
+      logger.info(`[TrafficOrchestrator] watchNowBtn click @ (${btnPos.x}, ${btnPos.y})`);
+      await this.engine.mouseMove(btnPos.x, btnPos.y);
+      await this.engine.wait(100 + Math.floor(Math.random() * 100));
+      try { await this.engine.click(btnPos.x, btnPos.y); } catch { /* navigate may start */ }
 
-      // Step 3: Gerakkan mouse ke arah card (human-like), lalu klik
-      await this.engine.mouseMove(cardInfo.x, cardInfo.y);
-      await this.engine.wait(150 + Math.floor(Math.random() * 200));
-
-      // engine.click() → page.mouse.click() → real MouseEvent → Direct Link FIRE ✓
-      // Browser juga follow href anchor → navigasi ke watch.html dimulai
-      try {
-        await this.engine.click(cardInfo.x, cardInfo.y);
-      } catch {
-        // click() bisa throw jika halaman langsung navigate; itu normal
-      }
-
-      // Step 4: Tunggu watch page selesai load
+      // Step 7: Tunggu watch.html load
       StateService.update({ action: '🌐 Menunggu watch page load...' });
-      try {
-        await this.engine.waitForNetworkIdle();
-      } catch {
-        // waitForNetworkIdle timeout → lanjut saja, halaman mungkin sudah cukup loaded
-      }
+      try { await this.engine.waitForNetworkIdle(); } catch { /* ok */ }
       await this.engine.wait(500);
 
-      // Verifikasi: cek apakah halaman sekarang adalah watch.html
       const currentUrl: string = await this.engine.evaluate(() => window.location.href);
       if (!currentUrl.includes('watch.html')) {
-        // Fallback: navigate manual jika entah bagaimana tidak ter-navigasi
-        logger.debug(`[TrafficOrchestrator] Tidak landing di watch.html (${currentUrl}), navigate manual`);
-        await this.engine.navigate(cardInfo.href);
-        await this.engine.wait(500);
+        logger.debug(`[TrafficOrchestrator] Tidak landing di watch.html (url: ${currentUrl}) — skip`);
+        return null;
       }
 
-      const finalUrl: string = await this.engine.evaluate(() => window.location.href);
-      const dramaId = finalUrl.match(/id=([^&]+)/)?.[1] ?? '?';
+      const dramaId = currentUrl.match(/id=([^&]+)/)?.[1] ?? '?';
       StateService.update({ action: `✅ Watch page termuat — drama ${dramaId}` });
-      logger.info(`[TrafficOrchestrator] Watch page OK: ${finalUrl}`);
-      return finalUrl;
+      logger.info(`[TrafficOrchestrator] Watch page OK: ${currentUrl}`);
+      return currentUrl;
 
     } catch (e: any) {
       logger.debug(`[TrafficOrchestrator] navigateToDramaWatch error (non-fatal): ${e?.message}`);

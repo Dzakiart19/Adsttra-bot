@@ -11,3 +11,4 @@
 - [Ad warm-up full-page sweep](ad-warmup-sweep.md) — for multi-ad pages (e.g. 10 Adsterra units), warm-up must scroll entire page in viewport-chunk steps, not fixed px; IntersectionObserver only fires when element enters viewport
 - [Proxy Tier 1 CPM strategy](proxy-tier1-cpm.md) — add country-specific sources (US/GB/CA/AU/FR/SE) at top of API_SOURCES list + set next() ratio to 95% Tier1; Firebase targets don't block proxies so pool stays large
 - [Production libgbm fix](production-libgbm-fix.md) — autoscale runtime REPLIT_LD_LIBRARY_PATH omits mesa; fix: iterate ls /nix/store mesa-* to find libgbm.so.1; never use head/tail-1 or find /nix/store
+- [Drama card modal flow](drama-card-modal.md) — homepage pakai div.drama-card → openModal(), bukan a[href*="watch.html"]; wajib scrollIntoView inline:center sebelum baca koordinat
