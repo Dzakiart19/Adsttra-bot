@@ -67,7 +67,11 @@ async function runWorker(proxyPool?: ProxyService) {
       try {
         await orchestrator.runFromJob(job.id!, jobData);
         sessionSuccess = true;
-        StateService.update({ successSessions: StateService.getState().successSessions + 1, totalSessions: StateService.getState().totalSessions + 1 });
+        // Baca state sekali — hindari race condition read-modify-write dengan dua getState() terpisah
+        {
+          const st = StateService.getState();
+          StateService.update({ successSessions: st.successSessions + 1, totalSessions: st.totalSessions + 1 });
+        }
       } catch (err: any) {
         const isProxyErr = err?.message && (
           err.message.includes('ERR_TIMED_OUT') || err.message.includes('ERR_PROXY') ||
@@ -84,10 +88,15 @@ async function runWorker(proxyPool?: ProxyService) {
           if (p && (err.message?.includes('Anonymous Proxy detected') || err.message?.includes('ERR_PROXY'))) {
             proxyPool.blacklistProxy(p.host, p.port);
           }
+          // Baca state sekali untuk increment
           StateService.update({ proxyRetries: StateService.getState().proxyRetries + 1 });
           logger.warn(`Worker: Proxy gagal, coba berikutnya...`);
         } else {
-          StateService.update({ failedSessions: StateService.getState().failedSessions + 1, totalSessions: StateService.getState().totalSessions + 1 });
+          // Baca state sekali — hindari race condition dua getState() terpisah
+          {
+            const st = StateService.getState();
+            StateService.update({ failedSessions: st.failedSessions + 1, totalSessions: st.totalSessions + 1 });
+          }
           logger.error('Worker: Job failed', { jobId: job.id, error: err?.message });
           throw err;
         }

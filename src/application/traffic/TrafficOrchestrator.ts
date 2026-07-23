@@ -318,7 +318,14 @@ export class TrafficOrchestrator {
       try {
         await new Promise(resolve => setTimeout(resolve, Math.floor(Math.random() * 1000) + 2000));
       } catch { /* abaikan */ }
-      await this.engine.close();
+      // PENTING: wrap close() dalam try/catch agar error dari close() (misalnya engine
+      // belum selesai init() saat throw terjadi) tidak menimpa/menyembunyikan error asli
+      // yang sedang di-propagate dari catch block di atas.
+      try {
+        await this.engine.close();
+      } catch (closeErr: any) {
+        logger.debug('[TrafficOrchestrator] engine.close() error (diabaikan)', { err: closeErr?.message });
+      }
     }
   }
 

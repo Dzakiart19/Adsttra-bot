@@ -4,6 +4,20 @@ Semua perubahan penting pada project ini didokumentasikan di sini.
 
 ---
 
+## [2.9.0] - 2026-07-23
+
+### Fixed
+
+- **KRITIS — `ProxyService.startBackgroundRefresh()` interval dobel**: Tambah guard flag `_refreshScheduled` — jika method dipanggil lebih dari sekali (bug caller atau refactor masa depan), `setInterval` kedua tidak dibuat. Sebelumnya tidak ada proteksi; dua interval berjalan paralel berarti refresh proxy 2× lebih sering dari yang diinginkan dan tidak bisa dihentikan.
+
+- **KRITIS — `engine.close()` di `finally` bisa sembunyikan error asli**: Jika `close()` throw (misalnya engine belum selesai `init()` saat error terjadi di tengah jalan), error dari `close()` menimpa error asli yang sedang di-propagate. Kini di-wrap `try/catch` — `close()` error di-log level debug dan dibuang, error asli tetap muncul ke caller.
+
+- **TINGGI — StateService read-modify-write dua `getState()` terpisah** (`runWorker()`): `successSessions: StateService.getState().successSessions + 1, totalSessions: StateService.getState().totalSessions + 1` memanggil `getState()` dua kali — jika ada delay async di antaranya (mode worker/Redis), salah satu nilai bisa stale. Kini baca sekali: `const st = StateService.getState()` lalu pakai `st.successSessions + 1` dan `st.totalSessions + 1`.
+
+- **SEDANG — `execSync` blocking event loop di setiap `init()` Chrome**: `execSync('find .puppeteer_cache ...')` memblokir seluruh event loop Node.js selama `find` berjalan. Dipanggil setiap sesi (ribuan kali per hari). Kini hasil scan disimpan ke module-level cache `_cachedChromePath` — `execSync` hanya dijalankan SEKALI saat pertama kali dibutuhkan, sesi berikutnya langsung pakai cache.
+
+---
+
 ## [2.8.0] - 2026-07-23
 
 ### Optimized

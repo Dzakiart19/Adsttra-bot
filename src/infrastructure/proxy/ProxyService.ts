@@ -419,11 +419,12 @@ function isTier1(country?: string): boolean {
 // ── Public API ─────────────────────────────────────────────────────────────────
 
 export class ProxyService {
-  private tier1:       ProxyEntry[] = [];   // Tier 1 CPM proxies (US, UK, CA, ...)
-  private other:       ProxyEntry[] = [];   // proxies dari negara lain
-  private cursor1:     number       = 0;
-  private cursorOther: number       = 0;
-  private blacklisted  = new Set<string>(); // runtime blacklist — proxy yang diblok target site
+  private tier1:             ProxyEntry[] = [];   // Tier 1 CPM proxies (US, UK, CA, ...)
+  private other:             ProxyEntry[] = [];   // proxies dari negara lain
+  private cursor1:           number       = 0;
+  private cursorOther:       number       = 0;
+  private blacklisted        = new Set<string>(); // runtime blacklist — proxy yang diblok target site
+  private _refreshScheduled  = false;             // guard: cegah double interval jika dipanggil 2×
 
   private get pool(): ProxyEntry[] { return [...this.tier1, ...this.other]; }
   private addToPool(entry: ProxyEntry): void {
@@ -583,6 +584,13 @@ export class ProxyService {
     onNewProxies?: (size: number) => void,
     targetHost?: string,
   ): void {
+    // ── Guard: jangan buat interval dobel jika dipanggil lebih dari satu kali ──
+    if (this._refreshScheduled) {
+      logger.warn('[ProxyService] Background refresh sudah terjadwal — skip duplikat panggilan.');
+      return;
+    }
+    this._refreshScheduled = true;
+
     const doRefresh = async () => {
       logger.info('[ProxyService] 🔄 Background refresh — mengambil proxy baru dari semua sumber...');
       try {

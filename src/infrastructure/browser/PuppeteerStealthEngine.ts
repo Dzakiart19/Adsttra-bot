@@ -6,6 +6,12 @@ import { logger } from '../logging/logger';
 
 puppeteer.use(StealthPlugin());
 
+// ── Module-level cache untuk Chrome executable path ───────────────────────────
+// Nilai: undefined = belum dicari, null = tidak ditemukan, string = path ditemukan.
+// Tujuan: cegah execSync() blocking event loop dijalankan setiap sesi (>2600×/hari).
+// Dicari SEKALI, lalu seluruh sesi berikutnya pakai hasil cache.
+let _cachedChromePath: string | null | undefined = undefined;
+
 export class PuppeteerStealthEngine implements BrowserEngine {
   private browser: Browser | null = null;
   private page: Page | null = null;
@@ -70,19 +76,31 @@ export class PuppeteerStealthEngine implements BrowserEngine {
     }
 
     // Prioritas 2: scan .puppeteer_cache/ untuk versi apapun (version-agnostic)
+    // PENTING: execSync() memblokir event loop Node.js — JANGAN jalankan setiap sesi.
+    // Gunakan cache module-level (_cachedChromePath): cari sekali, pakai selamanya.
     if (!executablePath) {
-      const cacheDir = process.env.PUPPETEER_CACHE_DIR ||
-        require('path').join(__dirname, '..', '..', '..', '.puppeteer_cache');
-      try {
-        const { execSync } = require('child_process');
-        const found = execSync(
-          `find "${cacheDir}" -name "chrome-headless-shell" -type f 2>/dev/null | head -1`,
-          { encoding: 'utf8' }
-        ).trim();
-        if (found && fs.existsSync(found)) {
-          executablePath = found;
+      if (_cachedChromePath === undefined) {
+        // Belum pernah dicari — jalankan sekali dan simpan hasilnya
+        const cacheDir = process.env.PUPPETEER_CACHE_DIR ||
+          require('path').join(__dirname, '..', '..', '..', '.puppeteer_cache');
+        try {
+          const { execSync } = require('child_process');
+          const found = execSync(
+            `find "${cacheDir}" -name "chrome-headless-shell" -type f 2>/dev/null | head -1`,
+            { encoding: 'utf8' }
+          ).trim();
+          _cachedChromePath = (found && fs.existsSync(found)) ? found : null;
+        } catch (_) {
+          _cachedChromePath = null; // tidak ditemukan, cache null agar tidak coba lagi
         }
-      } catch (_) { /* lanjut ke fallback */ }
+        if (_cachedChromePath) {
+          logger.debug(`[PuppeteerEngine] Chrome cache scan: ditemukan → ${_cachedChromePath}`);
+        }
+      }
+      // Pakai hasil cache (null berarti tidak ditemukan di prioritas 2)
+      if (_cachedChromePath) {
+        executablePath = _cachedChromePath;
+      }
     }
 
     // Prioritas 3: path legacy ~/.cache dan system chromium
