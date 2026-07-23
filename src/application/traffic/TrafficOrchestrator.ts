@@ -50,18 +50,17 @@ export class TrafficOrchestrator {
         try {
           StateService.update({ action: '🌍 Mencocokkan lokasi GPS dengan IP proxy...' });
           // Ekstrak host dari proxy server (format: "host:port") lalu query langsung
-          // ke ip-api.com/{host} agar mendapat geolokasi IP proxy, bukan IP server sendiri
+          // ke geo provider agar mendapat geolokasi IP proxy, bukan IP server sendiri.
+          // Fallback chain: ip-api.com → FreeIPAPI.com → ipapi.co
+          // (semua direct call dari server IP — berbagi kuota 45/60/1000 req/period)
           const proxyHost = config.proxy.server.split(':')[0];
-          const geoUrl = proxyHost
-            ? `http://ip-api.com/json/${proxyHost}?fields=status,lat,lon,city,country`
-            : 'http://ip-api.com/json/?fields=status,lat,lon,city,country';
-          const response = await fetch(geoUrl);
-          if (response.ok) {
-            const data: any = await response.json();
-            if (data.status === 'success' && data.lat && data.lon) {
-              logger.info('Setting Geolocation to match Proxy', { lat: data.lat, lon: data.lon, city: data.city, country: data.country, proxyHost });
-              await this.engine.setGeolocation(data.lat, data.lon);
-            }
+          const geo = await TrafficOrchestrator.fetchGeoLocation(proxyHost);
+          if (geo) {
+            logger.info('Setting Geolocation to match Proxy', {
+              lat: geo.lat, lon: geo.lon, city: geo.city, country: geo.country,
+              proxyHost, provider: geo.provider,
+            });
+            await this.engine.setGeolocation(geo.lat, geo.lon);
           }
         } catch (e) {
           logger.debug('Geolocation matching failed, using browser default', { e });
@@ -516,6 +515,65 @@ export class TrafficOrchestrator {
     } catch {
       // Scroll error → abaikan, lanjut ke dwell
     }
+  }
+
+  /**
+   * Ambil geolokasi IP via fallback chain:
+   *   1. ip-api.com    — HTTP, 45 req/min, tercepat, tanpa API key
+   *   2. FreeIPAPI.com — HTTPS, 60 req/min, tanpa API key
+   *   3. ipapi.co      — HTTPS, 1.000 req/hari, tanpa API key
+   *
+   * Semua call bersumber dari IP server (bukan via proxy) sehingga kuota dibagi
+   * oleh semua sesi yang berjalan bersamaan. Fallback menjamin geolokasi tetap
+   * berfungsi jika ip-api.com down atau rate-limited saat MAX_SESSIONS tinggi.
+   */
+  private static async fetchGeoLocation(
+    ip: string,
+  ): Promise<{ lat: number; lon: number; city?: string; country?: string; provider: string } | null> {
+
+    // ── Provider 1: ip-api.com — HTTP, 45 req/min ─────────────────────────────
+    try {
+      const url = ip
+        ? `http://ip-api.com/json/${ip}?fields=status,lat,lon,city,country`
+        : 'http://ip-api.com/json/?fields=status,lat,lon,city,country';
+      const res = await fetch(url, { signal: AbortSignal.timeout(5000) });
+      if (res.ok) {
+        const d: any = await res.json();
+        if (d.status === 'success' && d.lat && d.lon) {
+          return { lat: d.lat, lon: d.lon, city: d.city, country: d.country, provider: 'ip-api.com' };
+        }
+      }
+    } catch { /* coba provider berikutnya */ }
+
+    // ── Provider 2: FreeIPAPI.com — HTTPS, 60 req/min ─────────────────────────
+    try {
+      const url = ip
+        ? `https://freeipapi.com/api/json/${ip}`
+        : 'https://freeipapi.com/api/json/';
+      const res = await fetch(url, { signal: AbortSignal.timeout(5000) });
+      if (res.ok) {
+        const d: any = await res.json();
+        if (d.latitude && d.longitude) {
+          return { lat: d.latitude, lon: d.longitude, city: d.cityName, country: d.countryCode, provider: 'freeipapi.com' };
+        }
+      }
+    } catch { /* coba provider berikutnya */ }
+
+    // ── Provider 3: ipapi.co — HTTPS, 1.000 req/hari ──────────────────────────
+    try {
+      const url = ip
+        ? `https://ipapi.co/${ip}/json/`
+        : 'https://ipapi.co/json/';
+      const res = await fetch(url, { signal: AbortSignal.timeout(5000) });
+      if (res.ok) {
+        const d: any = await res.json();
+        if (!d.error && d.latitude && d.longitude) {
+          return { lat: d.latitude, lon: d.longitude, city: d.city, country: d.country_code, provider: 'ipapi.co' };
+        }
+      }
+    } catch { /* semua provider gagal */ }
+
+    return null;
   }
 
   private async performContextualClick(): Promise<void> {

@@ -4,6 +4,14 @@ Semua perubahan penting pada project ini didokumentasikan di sini.
 
 ---
 
+## [2.12.0] - 2026-07-23
+
+### Added
+
+- **Geo fallback chain di `TrafficOrchestrator.ts`** (`fetchGeoLocation()`): Geolocation matching kini tidak bergantung pada satu provider. Jika ip-api.com gagal (rate-limit atau down), otomatis fallback ke FreeIPAPI.com (HTTPS, 60 req/min) lalu ipapi.co (HTTPS, 1.000 req/hari). Ketiga provider gratis tanpa API key. Log mencatat provider mana yang berhasil (`provider: 'freeipapi.com'` dll). `ProxyService` validasi step 2 tidak diubah — ip-api.com via proxy adalah satu-satunya provider gratis dengan field `hosting` + `vpn` untuk filter datacenter.
+
+---
+
 ## [2.11.0] - 2026-07-23
 
 ### Changed
