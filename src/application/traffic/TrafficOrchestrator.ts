@@ -248,53 +248,48 @@ export class TrafficOrchestrator {
         } catch { /* scroll error (page crash / non-scrollable), abaikan */ }
       }
 
-      // 4. Dwell time di URL target
-      // Kurangi waktu yang sudah terpakai (browser init + navigate + warmup) dari durationMs
-      // agar total sesi tidak melebihi yang dikonfigurasi.
-      // Minimum dwell 1 detik agar kontekstual klik tetap bisa dieksekusi.
-      const elapsedBeforeDwell = Date.now() - startTime;
-      const dwellMs = Math.max(1000, config.durationMs - elapsedBeforeDwell);
+      // 5. Klik drama card (real DOM click) → trigger Direct Link Adsterra + navigate ke watch.html
+      //
+      // KRITIS — mengapa real DOM click (bukan window.location.href):
+      //   ads-adsterra.js memasang listener:
+      //     document.addEventListener("click", openOnce, true)
+      //   Direct Link Adsterra HANYA fire saat ada real click event yang bubble ke document.
+      //   Jika kita pakai window.location.href = '...' (assignment biasa), TIDAK ada click
+      //   event → Direct Link tidak pernah terpicu → kehilangan 1 format iklan CPM tinggi.
+      //
+      // Dengan engine.click(x, y) → page.mouse.click() → real MouseEvent di DOM →
+      //   capturing listener di document AKAN menerima event → Direct Link fire (buka tab baru).
+      //   Sekaligus browser follow href anchor → navigate ke watch.html.
+      //
+      // Watch page memiliki 4 banner slot Adsterra (vs 3 di homepage) — lebih banyak impression.
+      const watchUrl = await this.navigateToDramaWatch();
 
-      // Jumlah step disesuaikan durasi: sesi pendek (< 60s) cukup 1 step
-      // supaya timer dashboard mencerminkan durasi penuh di URL target.
-      const numSteps = dwellMs < 60000 ? 1 : 4;
-      const stayWeights = Array.from({ length: numSteps }, () => Math.random() + 0.5);
-      const totalWeight = stayWeights.reduce((a, b) => a + b, 0);
-      const stayDurations = stayWeights.map(w => Math.floor((w / totalWeight) * dwellMs));
-
-      logger.debug('Starting navigation loop', {
-        numSteps, stayDurations, humanBehavior: Config.HUMAN_BEHAVIOR
-      });
-
-      for (let i = 0; i < numSteps; i++) {
-        const currentStay = stayDurations[i];
-        logger.info(`Step ${i + 1}/${numSteps}: Staying for ${currentStay}ms...`);
-
-        StateService.update({
-          step: i + 1,
-          totalSteps: numSteps,
-          stepStartAt: Date.now(),
-          stepDurationMs: currentStay,
-          action: `Step ${i + 1}/${numSteps}: browsing halaman (${(currentStay / 1000).toFixed(1)}s)`,
-        });
-
-        if (Config.HUMAN_BEHAVIOR) {
-          const stepStart = Date.now();
-          while (Date.now() - stepStart < currentStay) {
-            await BehaviorService.simulateRandomAction(this.engine, config.viewport, { intensity: Config.BEHAVIOR_INTENSITY });
-          }
-        } else {
-          await this.engine.wait(currentStay);
-        }
-
-        await this.performContextualClick();
+      // 6. Watch page ad warm-up: trigger 4 banner slot Adsterra via IntersectionObserver
+      if (watchUrl) {
+        StateService.update({ action: '⏳ Watch page: menunggu script iklan init (2s)...' });
+        await this.engine.wait(2000);
+        await this.watchPageAdWarmup();
       }
 
-      // Final compensating wait (cover sisa waktu jika ada)
-      const remainingTime = config.durationMs - (Date.now() - startTime);
-      if (remainingTime > 0) {
-        StateService.update({ action: 'Final wait — melengkapi durasi sesi...' });
-        await this.engine.wait(remainingTime);
+      // 7. Dwell time sisa di halaman aktif (watch page, atau homepage jika navigasi gagal)
+      const elapsedBeforeDwell = Date.now() - startTime;
+      const dwellMs = Math.max(1000, config.durationMs - elapsedBeforeDwell);
+      const page = watchUrl ? 'watch page' : 'homepage';
+
+      logger.info(`Dwell ${(dwellMs / 1000).toFixed(1)}s on ${page}`);
+      StateService.update({
+        step: 1, totalSteps: 1,
+        stepStartAt: Date.now(), stepDurationMs: dwellMs,
+        action: `Browsing ${page} (${(dwellMs / 1000).toFixed(1)}s)`,
+      });
+
+      if (Config.HUMAN_BEHAVIOR) {
+        const dwellStart = Date.now();
+        while (Date.now() - dwellStart < dwellMs) {
+          await BehaviorService.simulateRandomAction(this.engine, config.viewport, { intensity: Config.BEHAVIOR_INTENSITY });
+        }
+      } else {
+        await this.engine.wait(dwellMs);
       }
 
       const actualDuration = Date.now() - startTime;
@@ -355,6 +350,151 @@ export class TrafficOrchestrator {
       fingerprintScript: FingerprintService.getInjectionScript(fingerprint),
       acceptLanguage: fingerprint.acceptLanguage,
     });
+  }
+
+  /**
+   * Cari drama card di halaman saat ini, scroll ke viewport, lalu klik dengan
+   * engine.click() → page.mouse.click() → real MouseEvent → trigger Direct Link Adsterra.
+   * Setelah klik, tunggu navigasi ke /watch.html selesai.
+   *
+   * Mengapa pendekatan ini:
+   *   - ads-adsterra.js memasang: document.addEventListener("click", openOnce, true)
+   *   - Direct Link HANYA fire jika ada real DOM click event di capturing phase
+   *   - window.location.href assignment TIDAK mengirim click event → Direct Link mati
+   *   - engine.click(x, y) → page.mouse.click() → real MouseEvent → Direct Link buka tab baru
+   */
+  private async navigateToDramaWatch(): Promise<string | null> {
+    try {
+      // Step 1: Scroll sedikit ke bawah agar drama card sudah masuk viewport
+      //         (card ada di bawah hero & banner iklan)
+      const firstCardPos: { y: number } | null = await this.engine.evaluate(() => {
+        const link = document.querySelector('a[href*="watch.html"]') as HTMLAnchorElement | null;
+        if (!link) return null;
+        link.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        return { y: window.scrollY };
+      });
+
+      if (firstCardPos === null) {
+        logger.debug('[TrafficOrchestrator] Tidak ada watch.html link — skip drama navigation');
+        return null;
+      }
+      await this.engine.wait(700);
+
+      // Step 2: Ambil href + koordinat tengah card yang visible di viewport
+      const cardInfo: { href: string; x: number; y: number } | null = await this.engine.evaluate(() => {
+        const links = Array.from(document.querySelectorAll('a[href*="watch.html"]')) as HTMLAnchorElement[];
+        const inViewport = links.filter(a => {
+          const r = a.getBoundingClientRect();
+          return r.width > 30 && r.height > 30 && r.top >= 0 && r.bottom <= window.innerHeight;
+        });
+        // Pilih acak dari max 10 yang visible
+        const pool = inViewport.length ? inViewport : links.slice(0, 10);
+        if (!pool.length) return null;
+        const pick = pool[Math.floor(Math.random() * Math.min(pool.length, 10))];
+        const rect = pick.getBoundingClientRect();
+        return {
+          href: pick.href,
+          x: Math.round(rect.left + rect.width  * (0.3 + Math.random() * 0.4)),
+          y: Math.round(rect.top  + rect.height * (0.3 + Math.random() * 0.4)),
+        };
+      });
+
+      if (!cardInfo) {
+        logger.debug('[TrafficOrchestrator] Tidak ada card visible di viewport — skip');
+        return null;
+      }
+
+      StateService.update({ action: `🎬 Klik drama card → trigger Direct Link + navigate watch...` });
+      logger.info(`[TrafficOrchestrator] Drama card click @ (${cardInfo.x}, ${cardInfo.y}) → ${cardInfo.href}`);
+
+      // Step 3: Gerakkan mouse ke arah card (human-like), lalu klik
+      await this.engine.mouseMove(cardInfo.x, cardInfo.y);
+      await this.engine.wait(150 + Math.floor(Math.random() * 200));
+
+      // engine.click() → page.mouse.click() → real MouseEvent → Direct Link FIRE ✓
+      // Browser juga follow href anchor → navigasi ke watch.html dimulai
+      try {
+        await this.engine.click(cardInfo.x, cardInfo.y);
+      } catch {
+        // click() bisa throw jika halaman langsung navigate; itu normal
+      }
+
+      // Step 4: Tunggu watch page selesai load
+      StateService.update({ action: '🌐 Menunggu watch page load...' });
+      try {
+        await this.engine.waitForNetworkIdle();
+      } catch {
+        // waitForNetworkIdle timeout → lanjut saja, halaman mungkin sudah cukup loaded
+      }
+      await this.engine.wait(500);
+
+      // Verifikasi: cek apakah halaman sekarang adalah watch.html
+      const currentUrl: string = await this.engine.evaluate(() => window.location.href);
+      if (!currentUrl.includes('watch.html')) {
+        // Fallback: navigate manual jika entah bagaimana tidak ter-navigasi
+        logger.debug(`[TrafficOrchestrator] Tidak landing di watch.html (${currentUrl}), navigate manual`);
+        await this.engine.navigate(cardInfo.href);
+        await this.engine.wait(500);
+      }
+
+      const finalUrl: string = await this.engine.evaluate(() => window.location.href);
+      const dramaId = finalUrl.match(/id=([^&]+)/)?.[1] ?? '?';
+      StateService.update({ action: `✅ Watch page termuat — drama ${dramaId}` });
+      logger.info(`[TrafficOrchestrator] Watch page OK: ${finalUrl}`);
+      return finalUrl;
+
+    } catch (e: any) {
+      logger.debug(`[TrafficOrchestrator] navigateToDramaWatch error (non-fatal): ${e?.message}`);
+      return null;
+    }
+  }
+
+  /**
+   * Ad warm-up di watch page: scroll seluruh halaman agar semua 4 banner slot Adsterra
+   * masuk viewport dan IntersectionObserver mereka mengirim impression request.
+   *
+   * Watch page banner layout:
+   *   - 468×60  desktop  (data-ad-key fd59d...)
+   *   - 320×50  mobile   (data-ad-key e1d15...)
+   *   - + 2 slot tambahan di bawah episode list
+   *
+   * Lebih cepat dari homepage warm-up (hemat durasi sesi), pakai chunk lebih besar.
+   */
+  private async watchPageAdWarmup(): Promise<void> {
+    try {
+      const pageInfo: { scrollHeight: number; viewportHeight: number } = await this.engine.evaluate(() => ({
+        scrollHeight: Math.max(document.body.scrollHeight, document.documentElement.scrollHeight),
+        viewportHeight: window.innerHeight,
+      }));
+
+      const { scrollHeight, viewportHeight } = pageInfo;
+      const chunkSize = Math.floor(viewportHeight * 0.7);
+      // Max 10 step — cukup untuk semua banner di watch page
+      const totalSteps = Math.min(Math.ceil(scrollHeight / chunkSize), 10);
+
+      logger.debug(`Watch ad warm-up: height=${scrollHeight}px steps=${totalSteps}`);
+      StateService.update({ action: `📺 Watch warm-up — ${totalSteps} langkah, 4 banner slot Adsterra...` });
+      await this.engine.wait(300);
+
+      // Sweep turun: trigger 4 banner slot (hidden by lazy loading)
+      for (let step = 0; step < totalSteps; step++) {
+        StateService.update({ action: `📺 Watch warm-up ↓ ${step + 1}/${totalSteps}` });
+        await this.engine.scroll(0, chunkSize);
+        await this.engine.wait(Math.floor(Math.random() * 300) + 500);
+      }
+      await this.engine.wait(800);
+
+      // Sweep naik sebagian (trigger kembali observer yang sudah visible)
+      const upSteps = Math.ceil(totalSteps * 0.4);
+      for (let step = 0; step < upSteps; step++) {
+        await this.engine.scroll(0, -chunkSize);
+        await this.engine.wait(Math.floor(Math.random() * 200) + 300);
+      }
+
+      StateService.update({ action: '✅ Watch warm-up selesai — 4 banner terindeks' });
+    } catch {
+      // Scroll error → abaikan, lanjut ke dwell
+    }
   }
 
   private async performContextualClick(): Promise<void> {
