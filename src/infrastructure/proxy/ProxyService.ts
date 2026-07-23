@@ -205,10 +205,12 @@ const TIER1_COUNTRIES = new Set([
 //   → country dari source tag tidak selalu akurat, ip-api.com lebih reliable
 //   → Google 204 diblokir oleh banyak proxy IP, jadi tidak digunakan
 
-function validateProxyFull(proxy: ProxyEntry): Promise<{ ok: boolean; country?: string }> {
+interface IpApiResult { ok: boolean; country?: string; hosting?: boolean; vpn?: boolean; }
+
+function validateProxyFull(proxy: ProxyEntry): Promise<IpApiResult> {
   return new Promise((resolve) => {
     let done = false;
-    const finish = (result: { ok: boolean; country?: string }) => {
+    const finish = (result: IpApiResult) => {
       if (!done) { done = true; resolve(result); }
     };
     try {
@@ -216,7 +218,9 @@ function validateProxyFull(proxy: ProxyEntry): Promise<{ ok: boolean; country?: 
         host:    proxy.host,
         port:    proxy.port,
         method:  'GET',
-        path:    'http://ip-api.com/json',
+        // Minta fields hosting + vpn sekaligus country — filter datacenter saat validasi,
+        // tidak perlu ReputationService.checkIP() lagi di runtime.
+        path:    'http://ip-api.com/json?fields=status,countryCode,hosting,proxy,vpn',
         headers: {
           Host:               'ip-api.com',
           'User-Agent':       'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
@@ -235,7 +239,9 @@ function validateProxyFull(proxy: ProxyEntry): Promise<{ ok: boolean; country?: 
           try {
             const json    = JSON.parse(body);
             const country = typeof json.countryCode === 'string' ? json.countryCode : undefined;
-            finish({ ok: true, country });
+            const hosting = json.hosting === true;
+            const vpn     = json.vpn     === true;
+            finish({ ok: true, country, hosting, vpn });
           } catch {
             finish({ ok: true }); // proxy works, country unknown
           }
@@ -341,22 +347,31 @@ function testTargetSiteViaProxy(proxy: ProxyEntry, targetHost: string): Promise<
 }
 
 /**
- * Validasi proxy tiga tahap:
- * 1. HTTP GET ip-api.com → cek konektivitas + dapat country
- * 2. HTTPS CONNECT google.com:443 → cek dukungan HTTPS tunneling
+ * Validasi proxy tiga tahap (urutan dioptimalkan untuk hemat quota ip-api.com):
+ * 1. HTTPS CONNECT google.com:443 → cek dukungan HTTPS tunneling (murah, tanpa API)
+ * 2. HTTP GET ip-api.com via proxy → dapat country + filter hosting/VPN/datacenter
+ *    (hanya proxy yang lolos step 1 yang sampai sini — hemat banyak API calls)
  * 3. (Opsional) HTTPS ke target site → filter proxy yang pasti kena blokir
  * Proxy lolos hanya jika SEMUA tahap berhasil.
  */
 async function validateProxy(proxy: ProxyEntry, targetHost?: string): Promise<{ ok: boolean; country?: string }> {
-  const httpResult = await validateProxyFull(proxy);
-  if (!httpResult.ok) return { ok: false };
+  // Step 1: HTTPS CONNECT — paling murah, tidak ada API call
   const httpsOk = await testHttpsConnect(proxy);
   if (!httpsOk) return { ok: false };
+
+  // Step 2: ip-api.com via proxy — dapat country, sekaligus filter hosting/datacenter/VPN
+  // Hanya proxy yang lolos HTTPS CONNECT yang sampai sini → hemat ~70% quota ip-api.com
+  const ipInfo = await validateProxyFull(proxy);
+  if (!ipInfo.ok) return { ok: false };
+  if (ipInfo.hosting || ipInfo.vpn) return { ok: false }; // buang datacenter/VPN saat validasi
+
+  // Step 3: (Opsional) test HTTPS ke target site — filter proxy yang pasti kena blokir
   if (targetHost) {
     const targetOk = await testTargetSiteViaProxy(proxy, targetHost);
     if (!targetOk) return { ok: false };
   }
-  return { ok: true, country: httpResult.country };
+
+  return { ok: true, country: ipInfo.country };
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────────────

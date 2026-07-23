@@ -9,7 +9,6 @@ import { ProxyService } from './infrastructure/proxy/ProxyService';
 import { WebshareProxyService } from './infrastructure/proxy/WebshareProxyService';
 import { StateService } from './infrastructure/monitoring/StateService';
 import { startDashboard } from './infrastructure/monitoring/DashboardServer';
-import { ReputationService } from './infrastructure/monitoring/ReputationService';
 import { UptimeService } from './infrastructure/monitoring/UptimeService';
 import { Job } from 'bullmq';
 
@@ -58,17 +57,6 @@ async function runWorker(proxyPool?: ProxyService) {
       if (proxyPool && proxyPool.size > 0) {
         p = proxyPool.next()!;
         const proxyStr = `${p.host}:${p.port}`;
-
-        // ── Reputation pre-check: skip datacenter/VPN proxy sebelum buka browser ──
-        // Catatan: hanya block hosting/VPN (datacenter jelas); proxy:true residential
-        // dibiarkan lolos — sudah difilter oleh target-site probe saat validasi.
-        const rep = await ReputationService.checkIP(proxyStr);
-        if (rep && (rep.hosting || rep.vpn)) {
-          const reason = rep.vpn ? 'VPN' : 'hosting/datacenter';
-          StateService.update({ proxyRetries: StateService.getState().proxyRetries + 1, proxyBurnt: true, action: `⚠ Worker burnt (${reason}) ${proxyStr} — skip` });
-          logger.warn(`Worker: Proxy burnt (${reason}) — skip tanpa buka browser (${proxyStr})`);
-          continue;
-        }
 
         jobData = { ...job.data, proxy: { host: p.host, port: p.port } };
         logger.info(`Worker: Attempt ${attempt + 1}/${MAX_PROXY_RETRIES} — proxy: ${proxyStr}`);
@@ -287,22 +275,12 @@ async function bootstrap() {
               const p = proxyPool!.next()!;
               const proxyStr = `${p.host}:${p.port}`;
 
-              // ── Reputation pre-check: skip datacenter/VPN proxy sebelum buka browser ──
-              // Hanya block hosting/VPN; proxy:true residential dibiarkan lolos —
-              // sudah difilter oleh target-site probe saat validasi.
               StateService.update({
                 sessionIndex: i, attempt, maxAttempts: MAX_PROXY_RETRIES + 1,
                 proxy: proxyStr, proxyBurnt: false, targetUrl: Config.DEFAULT_URL,
                 referrer: null, step: 0,
-                action: `Cek reputasi proxy ${proxyStr}...`,
+                action: `Memulai sesi R${round}·S${i+1} attempt ${attempt+1} via proxy...`,
               });
-              const rep = await ReputationService.checkIP(proxyStr);
-              if (rep && (rep.hosting || rep.vpn)) {
-                const reason = rep.vpn ? 'VPN' : 'hosting/datacenter';
-                StateService.update({ proxyBurnt: true, proxyRetries: StateService.getState().proxyRetries + 1, action: `⚠ Burnt (${reason}) ${proxyStr} — skip` });
-                logger.warn(`[R${round}·S${i+1}] Proxy burnt (${reason}) — skip tanpa buka browser (${proxyStr})`);
-                continue;
-              }
 
               const fingerprint = FingerprintService.generate();
               const proxyConfig = { server: proxyStr };
