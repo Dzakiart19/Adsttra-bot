@@ -8,7 +8,10 @@ export interface Fingerprint {
   deviceMemory: number;
   platform: string;
   languages: string[];
-  acceptLanguage: string;   // formatted Accept-Language header value
+  acceptLanguage: string;       // formatted Accept-Language header value
+  timezone: string;             // IANA timezone, e.g. "America/New_York"
+  timezoneOffset: number;       // return value of Date.prototype.getTimezoneOffset()
+  connectionType: 'wifi' | '4g'; // navigator.connection.type
   webgl: {
     vendor: string;
     renderer: string;
@@ -43,6 +46,43 @@ export class FingerprintService {
     { weight:  3, w: 1920, h: 1200 },  // #10 — widescreen
     { weight:  2, w: 2560, h: 1600 },  // #11 — MacBook Pro 16"
   ];
+
+  // ── Mapping country → timezone IANA + getTimezoneOffset() ───────────────────
+  // offset = return value of Date.prototype.getTimezoneOffset():
+  //   UTC-x → offset = x*60 (positif), UTC+x → offset = -x*60 (negatif)
+  // Nilai berdasarkan Juli 2026 (DST aktif di belahan utara).
+  private static COUNTRY_TIMEZONES: Record<string, Array<{ tz: string; offset: number }>> = {
+    US: [
+      { tz: 'America/New_York',    offset: 240  }, // EDT UTC-4 (~40% users)
+      { tz: 'America/Chicago',     offset: 300  }, // CDT UTC-5 (~25%)
+      { tz: 'America/Denver',      offset: 360  }, // MDT UTC-6 (~7%)
+      { tz: 'America/Los_Angeles', offset: 420  }, // PDT UTC-7 (~28%)
+    ],
+    GB: [{ tz: 'Europe/London',      offset: -60  }], // BST UTC+1
+    CA: [
+      { tz: 'America/Toronto',     offset: 240  }, // EDT
+      { tz: 'America/Vancouver',   offset: 420  }, // PDT
+    ],
+    AU: [
+      { tz: 'Australia/Sydney',    offset: -600 }, // AEST UTC+10 (winter, no DST)
+      { tz: 'Australia/Perth',     offset: -480 }, // AWST UTC+8
+    ],
+    NZ: [{ tz: 'Pacific/Auckland',   offset: -720 }], // NZST UTC+12 (winter)
+    IE: [{ tz: 'Europe/Dublin',      offset: -60  }], // IST UTC+1
+    DE: [{ tz: 'Europe/Berlin',      offset: -120 }], // CEST UTC+2
+    FR: [{ tz: 'Europe/Paris',       offset: -120 }], // CEST UTC+2
+    NL: [{ tz: 'Europe/Amsterdam',   offset: -120 }], // CEST UTC+2
+    SE: [{ tz: 'Europe/Stockholm',   offset: -120 }], // CEST UTC+2
+    NO: [{ tz: 'Europe/Oslo',        offset: -120 }], // CEST UTC+2
+    DK: [{ tz: 'Europe/Copenhagen',  offset: -120 }], // CEST UTC+2
+    FI: [{ tz: 'Europe/Helsinki',    offset: -180 }], // EEST UTC+3
+    AT: [{ tz: 'Europe/Vienna',      offset: -120 }], // CEST UTC+2
+    CH: [{ tz: 'Europe/Zurich',      offset: -120 }], // CEST UTC+2
+    BE: [{ tz: 'Europe/Brussels',    offset: -120 }], // CEST UTC+2
+    JP: [{ tz: 'Asia/Tokyo',         offset: -540 }], // JST UTC+9 (no DST)
+    KR: [{ tz: 'Asia/Seoul',         offset: -540 }], // KST UTC+9 (no DST)
+    SG: [{ tz: 'Asia/Singapore',     offset: -480 }], // SGT UTC+8 (no DST)
+  };
 
   // ── Mapping country → navigator.languages ────────────────────────────────────
   private static COUNTRY_LANGUAGES: Record<string, string[]> = {
@@ -112,6 +152,15 @@ export class FingerprintService {
     const languages = this.getLanguagesForCountry(country);
     const acceptLanguage = this.buildAcceptLanguage(languages);
 
+    // ── Timezone: sesuaikan ke negara proxy ──────────────────────────────────
+    // Mismatch antara IP negara dan timezone browser adalah sinyal bot yang
+    // paling mudah dideteksi ad network — harus selalu konsisten.
+    const { tz: timezone, offset: timezoneOffset } = this.pickTimezone(country);
+
+    // ── Connection: desktop selalu wifi (premium signal untuk CPM) ────────────
+    // 85% wifi (desktop/laptop), 15% 4g (laptop dengan hotspot)
+    const connectionType: 'wifi' | '4g' = Math.random() < 0.85 ? 'wifi' : '4g';
+
     // ── Hardware: distribusi realistis ────────────────────────────────────────
     const hardwareConcurrency = [4, 8, 8, 8, 12, 16][Math.floor(Math.random() * 6)];
     const deviceMemory = [8, 8, 16, 16][Math.floor(Math.random() * 4)];
@@ -125,6 +174,9 @@ export class FingerprintService {
       platform: navPlatform,
       languages,
       acceptLanguage,
+      timezone,
+      timezoneOffset,
+      connectionType,
       webgl,
     };
   }
@@ -165,6 +217,15 @@ export class FingerprintService {
       const q = Math.max(0.1, 1 - i * 0.1).toFixed(1);
       return `${lang};q=${q}`;
     }).join(',');
+  }
+
+  private static pickTimezone(country?: string): { tz: string; offset: number } {
+    const pool = (country && this.COUNTRY_TIMEZONES[country]) ?? null;
+    if (pool && pool.length > 0) {
+      return pool[Math.floor(Math.random() * pool.length)];
+    }
+    // Default ke US Eastern jika negara tidak dikenal
+    return { tz: 'America/New_York', offset: 240 };
   }
 
   // ── Injection script ────────────────────────────────────────────────────────
@@ -330,6 +391,44 @@ export class FingerprintService {
               : orgQuery.apply(navigator.permissions, [parameters])
           ), 'query');
         }
+
+        // --- Timezone Spoofing ---
+        // Mismatch antara IP negara dan timezone browser adalah sinyal bot paling
+        // mudah dideteksi. Kedua titik yang dicek fingerprinter:
+        //   1. Date.prototype.getTimezoneOffset() → offset menit dari UTC
+        //   2. Intl.DateTimeFormat().resolvedOptions().timeZone → IANA timezone name
+        Date.prototype.getTimezoneOffset = makeNative(function() {
+          return ${fingerprint.timezoneOffset};
+        }, 'getTimezoneOffset');
+
+        try {
+          const _origResolvedOptions = Intl.DateTimeFormat.prototype.resolvedOptions;
+          Intl.DateTimeFormat.prototype.resolvedOptions = makeNative(function() {
+            const opts = _origResolvedOptions.call(this);
+            opts.timeZone = '${fingerprint.timezone}';
+            return opts;
+          }, 'resolvedOptions');
+        } catch(e) {}
+
+        // --- navigator.connection (Network Information API) ---
+        // Desktop wifi = sinyal premium untuk ad network (CPM lebih tinggi dari 4g mobile).
+        // Beberapa fingerprinter cek apakah connection.type konsisten dengan UA device.
+        try {
+          const _connType    = '${fingerprint.connectionType}';
+          const _isWifi      = _connType === 'wifi';
+          const _mockConn = {
+            type:          _connType,
+            effectiveType: '4g',
+            downlink:      _isWifi ? (10 + Math.random() * 40) : (3 + Math.random() * 12),
+            rtt:           _isWifi ? (20 + Math.random() * 60)  : (50 + Math.random() * 100),
+            saveData:      false,
+            onchange:      null,
+          };
+          Object.defineProperty(navigator, 'connection',        { get: () => _mockConn, configurable: true });
+          Object.defineProperty(navigator, 'mozConnection',     { get: () => _mockConn, configurable: true });
+          Object.defineProperty(navigator, 'webkitConnection',  { get: () => _mockConn, configurable: true });
+        } catch(e) {}
+
       })();
     `;
   }

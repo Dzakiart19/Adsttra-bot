@@ -263,11 +263,13 @@ export class TrafficOrchestrator {
       // Watch page memiliki 4 banner slot Adsterra (vs 3 di homepage) — lebih banyak impression.
       const watchUrl = await this.navigateToDramaWatch();
 
-      // 6. Watch page ad warm-up: trigger 4 banner slot Adsterra via IntersectionObserver
+      // 6. Watch page ad warm-up + video player interaction
       if (watchUrl) {
         StateService.update({ action: '⏳ Watch page: menunggu script iklan init (2s)...' });
         await this.engine.wait(2000);
         await this.watchPageAdWarmup();
+        // Klik play video setelah warm-up — engagement signal terkuat untuk CPM
+        await this.interactWithVideoPlayer();
       }
 
       // 7. Dwell time sisa di halaman aktif (watch page, atau homepage jika navigasi gagal)
@@ -480,6 +482,78 @@ export class TrafficOrchestrator {
    *
    * Lebih cepat dari homepage warm-up (hemat durasi sesi), pakai chunk lebih besar.
    */
+  /**
+   * Klik play video di watch page — engagement signal terkuat untuk CPM.
+   *
+   * Ad network (Adsterra, AdSense, dll) tracking engagement: berapa lama user
+   * berinteraksi dengan konten, bukan hanya scroll. Klik play + tonton beberapa
+   * detik menghasilkan session quality score lebih tinggi → CPM naik.
+   *
+   * Strategi: coba banyak selector umum player (video element, tombol play,
+   * overlay berbagai library: Plyr, VideoJS, JWPlayer, dll). Jika tidak ada
+   * yang cocok (video di iframe), lewati tanpa error.
+   */
+  private async interactWithVideoPlayer(): Promise<void> {
+    try {
+      StateService.update({ action: '▶️ Mencari video player untuk diklik...' });
+
+      const result: { selector: string; tag: string } | null = await this.engine.evaluate(() => {
+        const candidates = [
+          // Tombol play overlay (paling umum di drama sites)
+          '.plyr__control--overlaid',          // Plyr.js
+          '[data-plyr="play"]',
+          '.vjs-big-play-button',              // Video.js
+          '.jw-icon-display',                  // JW Player
+          '.fp-play',                          // Flowplayer
+          '.mejs__overlay-play',               // MediaElement.js
+          // Generic play button patterns
+          'button[aria-label*="play" i]',
+          'button[title*="play" i]',
+          '[class*="play-btn"]:not(svg)',
+          '[class*="play-button"]:not(svg)',
+          '[id*="play-btn"]',
+          '[id*="play-button"]',
+          '.play', '.play-icon', '#play',
+          // Video element langsung (jika tidak di-iframe)
+          'video',
+        ];
+
+        for (const sel of candidates) {
+          try {
+            const el = document.querySelector(sel) as HTMLElement | null;
+            if (!el) continue;
+            const rect = el.getBoundingClientRect();
+            if (rect.width < 5 || rect.height < 5) continue;
+            // Scroll ke elemen dulu
+            el.scrollIntoView({ behavior: 'instant', block: 'center' });
+            const r2 = el.getBoundingClientRect();
+            if (r2.top < 0 || r2.bottom > window.innerHeight) continue;
+            // Klik
+            el.click();
+            // Kalau video element, panggil .play() juga
+            if (el.tagName === 'VIDEO') {
+              (el as HTMLVideoElement).play().catch(() => {});
+            }
+            return { selector: sel, tag: el.tagName };
+          } catch { continue; }
+        }
+        return null;
+      });
+
+      if (result) {
+        StateService.update({ action: `▶️ Video diklik (${result.tag}) — menonton...` });
+        logger.info(`[TrafficOrchestrator] Video player diklik: ${result.selector} <${result.tag}>`);
+        // Tonton 3–7 detik sebelum lanjut dwell — cukup untuk trigger engagement metric
+        await this.engine.wait(Math.floor(Math.random() * 4000) + 3000);
+        StateService.update({ action: '✅ Video interaction selesai' });
+      } else {
+        logger.debug('[TrafficOrchestrator] Video player tidak ditemukan (mungkin di iframe) — skip');
+      }
+    } catch (e: any) {
+      logger.debug(`[TrafficOrchestrator] interactWithVideoPlayer error (non-fatal): ${e?.message}`);
+    }
+  }
+
   private async watchPageAdWarmup(): Promise<void> {
     try {
       const pageInfo: { scrollHeight: number; viewportHeight: number } = await this.engine.evaluate(() => ({
