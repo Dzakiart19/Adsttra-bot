@@ -4,6 +4,22 @@ Semua perubahan penting pada project ini didokumentasikan di sini.
 
 ---
 
+## [2.13.0] - 2026-07-24
+
+### Fixed / Improved (CPM optimization)
+
+- **`SESSION_TIME` naik dari 30 → 120 detik** (di `.replit` env var): sesi 30 detik langsung difilter Adsterra sebagai bounce. 120 detik = minimum agar traffic quality score dihitung wajar oleh ad network.
+- **`navigateToDramaWatch()` — polling #watchNowBtn** (max 12 detik, cek tiap 2s): sebelumnya hanya tunggu flat 4 detik → watchNowBtn sering tidak ditemukan via proxy lambat. Sekarang poll 6× dengan interval 2s hingga tombol benar-benar muncul di DOM.
+- **Deteksi navigasi langsung ke watch.html**: jika drama card click langsung navigate (tanpa modal), kode kini mendeteksi URL change dan return watch URL tanpa menunggu watchNowBtn.
+
+### Added (organic signals untuk CPM)
+
+- **Timezone injection** (`FingerprintService.ts`): `Date.prototype.getTimezoneOffset()` dan `Intl.DateTimeFormat.prototype.resolvedOptions().timeZone` kini dispoofing sesuai negara proxy (COUNTRY_TIMEZONES mapping 19 negara). Mismatch timezone vs IP negara = sinyal bot terkuat yang dipakai ad network.
+- **`navigator.connection` spoofing**: desktop selalu wifi (85%) atau 4g (15%). Ad network menilai wifi = user premium → CPM lebih tinggi.
+- **`interactWithVideoPlayer()`** (`TrafficOrchestrator.ts`): setelah watch page load + warm-up, klik tombol play video (multi-selector: Plyr, VideoJS, JWPlayer, generic, `<video>`). Tonton 3–7 detik. Engagement signal terkuat untuk quality score.
+
+---
+
 ## [2.12.0] - 2026-07-23
 
 ### Added

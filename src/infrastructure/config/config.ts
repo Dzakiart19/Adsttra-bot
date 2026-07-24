@@ -18,7 +18,7 @@ const ConfigSchema = z.object({
   PROXY_PASS: z.string().optional(),
   USE_FREE_PROXIES: z.preprocess((a) => a === 'true' || a === '1' || a === true, z.boolean()).default(false),
   PROXY_VALIDATE_CONCURRENCY: z.coerce.number().int().positive().default(40),
-  SESSION_TIME: z.coerce.string().default('10'),
+  SESSION_TIME: z.coerce.string().default('120'),
   REFERRALS: z.enum(['yes', 'no']).default('no'),
   HUMAN_BEHAVIOR: z.preprocess((a) => a === 'true' || a === '1' || a === true, z.boolean()).default(true),
   BEHAVIOR_INTENSITY: z.enum(['low', 'medium', 'high']).default('medium'),

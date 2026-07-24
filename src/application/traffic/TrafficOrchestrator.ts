@@ -419,26 +419,49 @@ export class TrafficOrchestrator {
       try { await this.engine.click(cardPos.x, cardPos.y); } catch { /* navigate may start */ }
 
       // Step 4: Tunggu modal muncul + API drama detail selesai dimuat
-      //         Modal fetch ke /api/drama/{provider}/{id} lewat proxy bisa sampai 4 detik
+      //         Modal fetch ke /api/drama/{provider}/{id} lewat proxy bisa lambat — poll tiap 2s
+      //         max 12s total. Ini fix utama kenapa watchNowBtn sering tidak muncul:
+      //         4s terlalu singkat untuk proxy lambat; dengan polling kita tunggu sampai benar ada.
       StateService.update({ action: '⏳ Menunggu modal detail drama muncul...' });
-      await this.engine.wait(4000);
 
-      // Step 5: Ambil koordinat tombol "Tonton Sekarang" (#watchNowBtn) dalam modal
-      const btnPos: { x: number; y: number } | null = await this.engine.evaluate(() => {
-        const btn = document.getElementById('watchNowBtn') as HTMLElement | null;
-        if (!btn) return null;
-        btn.scrollIntoView({ behavior: 'instant', block: 'center' });
-        const rect = btn.getBoundingClientRect();
-        if (rect.width < 10 || rect.height < 10) return null;
-        return {
-          x: Math.round(rect.left + rect.width  * (0.3 + Math.random() * 0.4)),
-          y: Math.round(rect.top  + rect.height * (0.3 + Math.random() * 0.4)),
-        };
-      });
+      // Cek dulu apakah halaman tidak ikut navigate setelah drama card click
+      const stillOnHomepage: boolean = await this.engine.evaluate(
+        () => !window.location.href.includes('watch.html')
+      );
+      if (!stillOnHomepage) {
+        // Halaman sudah navigate ke watch.html langsung (tanpa modal) — manfaatkan
+        const url: string = await this.engine.evaluate(() => window.location.href);
+        if (url.includes('watch.html')) {
+          logger.info(`[TrafficOrchestrator] Watch page langsung (tanpa modal): ${url}`);
+          return url;
+        }
+      }
+
+      // Poll #watchNowBtn setiap 2 detik, maksimal 12 detik
+      let btnPos: { x: number; y: number } | null = null;
+      for (let attempt = 0; attempt < 6; attempt++) {
+        await this.engine.wait(2000);
+        btnPos = await this.engine.evaluate(() => {
+          const btn = document.getElementById('watchNowBtn') as HTMLElement | null;
+          if (!btn) return null;
+          btn.scrollIntoView({ behavior: 'instant', block: 'center' });
+          const rect = btn.getBoundingClientRect();
+          if (rect.width < 10 || rect.height < 10) return null;
+          return {
+            x: Math.round(rect.left + rect.width  * (0.3 + Math.random() * 0.4)),
+            y: Math.round(rect.top  + rect.height * (0.3 + Math.random() * 0.4)),
+          };
+        });
+        if (btnPos) {
+          logger.debug(`[TrafficOrchestrator] #watchNowBtn muncul setelah ${(attempt + 1) * 2}s`);
+          break;
+        }
+        StateService.update({ action: `⏳ Menunggu modal... (${(attempt + 1) * 2}s / 12s maks)` });
+      }
 
       if (!btnPos) {
-        // Modal gagal muncul atau API error — skip watch navigation
-        logger.debug('[TrafficOrchestrator] #watchNowBtn tidak muncul dalam modal — skip');
+        // Modal tidak muncul dalam 12 detik — log info (bukan debug) agar terlihat di stats
+        logger.info('[TrafficOrchestrator] #watchNowBtn tidak muncul dalam 12s — skip watch page');
         return null;
       }
 
