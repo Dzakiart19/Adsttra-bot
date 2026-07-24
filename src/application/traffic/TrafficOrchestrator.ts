@@ -263,13 +263,16 @@ export class TrafficOrchestrator {
       // Watch page memiliki 4 banner slot Adsterra (vs 3 di homepage) — lebih banyak impression.
       const watchUrl = await this.navigateToDramaWatch();
 
-      // 6. Watch page ad warm-up + video player interaction
+      // 6. Watch page ad warm-up + video player interaction + multi-page navigation
       if (watchUrl) {
         StateService.update({ action: '⏳ Watch page: menunggu script iklan init (2s)...' });
         await this.engine.wait(2000);
         await this.watchPageAdWarmup();
         // Klik play video setelah warm-up — engagement signal terkuat untuk CPM
         await this.interactWithVideoPlayer();
+        // Setelah watch page pertama, kunjungi drama ke-2 → pages per session +1
+        // Pages/session adalah salah satu metrik kualitas utama ad network.
+        await this.navigateToSecondDrama();
       }
 
       // 7. Dwell time sisa di halaman aktif (watch page, atau homepage jika navigasi gagal)
@@ -516,6 +519,91 @@ export class TrafficOrchestrator {
    * overlay berbagai library: Plyr, VideoJS, JWPlayer, dll). Jika tidak ada
    * yang cocok (video di iframe), lewati tanpa error.
    */
+  /**
+   * Kunjungi drama ke-2 setelah watch page pertama — meningkatkan pages/session.
+   *
+   * Pages per session adalah metrik kualitas utama ad network: semakin banyak halaman
+   * dikunjungi dalam satu sesi, semakin tinggi nilai traffic tersebut karena menunjukkan
+   * user engaged (bukan bounce). Target: min 2 drama per sesi organik.
+   *
+   * Alur: homepage → klik drama lain (acak, bukan yang sama) → brief warm-up → kembali ke flow utama.
+   * Menggunakan navigasi sederhana tanpa modal untuk menghemat waktu sesi.
+   */
+  private async navigateToSecondDrama(): Promise<void> {
+    try {
+      StateService.update({ action: '🔄 Multi-page: kembali ke homepage untuk drama ke-2...' });
+      logger.info('[TrafficOrchestrator] Multi-page navigation: menuju drama ke-2');
+
+      // Kembali ke homepage
+      await this.engine.navigate(Config.DEFAULT_URL);
+      try { await this.engine.waitForNetworkIdle(); } catch { /* ok */ }
+      await this.engine.wait(1500);
+
+      // Scroll sedikit agar iklan homepage ke-2 juga ter-trigger
+      await this.engine.scroll(0, 350);
+      await this.engine.wait(800);
+      await this.engine.scroll(0, 350);
+      await this.engine.wait(600);
+
+      // Cari drama card yang bisa diklik
+      const cardPos: { x: number; y: number } | null = await this.engine.evaluate(() => {
+        const cards = Array.from(
+          document.querySelectorAll('.drama-card:not(.is-skeleton)')
+        ) as HTMLElement[];
+        if (!cards.length) return null;
+
+        // Acak urutan, ambil dari pool pertama 20
+        const shuffled = cards.slice(0, 20).sort(() => Math.random() - 0.5);
+        for (const pick of shuffled) {
+          pick.scrollIntoView({ behavior: 'instant', block: 'center', inline: 'center' });
+          const rect = pick.getBoundingClientRect();
+          if (
+            rect.width > 30 && rect.height > 30 &&
+            rect.top >= 0 && rect.bottom <= window.innerHeight &&
+            rect.left >= 0 && rect.right  <= window.innerWidth
+          ) {
+            return {
+              x: Math.round(rect.left + rect.width  * (0.3 + Math.random() * 0.4)),
+              y: Math.round(rect.top  + rect.height * (0.3 + Math.random() * 0.4)),
+            };
+          }
+        }
+        return null;
+      });
+
+      if (!cardPos) {
+        logger.debug('[TrafficOrchestrator] Multi-page: tidak ada drama card — skip drama ke-2');
+        return;
+      }
+
+      // Klik drama card ke-2 (trigger Direct Link lagi + navigate)
+      StateService.update({ action: '🎬 Multi-page: klik drama ke-2 → pages per session = 2' });
+      logger.info(`[TrafficOrchestrator] Multi-page drama card click @ (${cardPos.x}, ${cardPos.y})`);
+      await this.engine.mouseMove(cardPos.x, cardPos.y);
+      await this.engine.wait(200 + Math.floor(Math.random() * 150));
+      try { await this.engine.click(cardPos.x, cardPos.y); } catch { /* navigate may start */ }
+
+      // Tunggu halaman ke-2 load (watch page atau homepage tergantung navigasi)
+      try { await this.engine.waitForNetworkIdle(); } catch { /* ok */ }
+      await this.engine.wait(2000);
+
+      // Quick scroll agar iklan di halaman ke-2 juga ter-trigger
+      await this.engine.scroll(0, 400);
+      await this.engine.wait(700);
+      await this.engine.scroll(0, 400);
+      await this.engine.wait(500);
+      await this.engine.scroll(0, -300);
+      await this.engine.wait(400);
+
+      const finalUrl: string = await this.engine.evaluate(() => window.location.href);
+      logger.info(`[TrafficOrchestrator] Multi-page selesai. URL ke-2: ${finalUrl.substring(0, 80)}`);
+      StateService.update({ action: '✅ Multi-page selesai — 2 drama dikunjungi, pages/session = 2' });
+
+    } catch (e: any) {
+      logger.debug(`[TrafficOrchestrator] navigateToSecondDrama error (non-fatal): ${e?.message}`);
+    }
+  }
+
   private async interactWithVideoPlayer(): Promise<void> {
     try {
       StateService.update({ action: '▶️ Mencari video player untuk diklik...' });

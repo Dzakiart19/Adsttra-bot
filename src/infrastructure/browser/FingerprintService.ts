@@ -410,6 +410,33 @@ export class FingerprintService {
           }, 'resolvedOptions');
         } catch(e) {}
 
+        // --- Battery API Spoofing ---
+        // navigator.getBattery() dipakai fingerprinter untuk cek konsistensi device.
+        // Desktop real rata-rata: charged 75-100%, sering terhubung charger.
+        // Tanpa spoof: Puppeteer return undefined → sinyal jelas non-browser.
+        try {
+          const _lvl  = parseFloat((0.75 + Math.random() * 0.25).toFixed(2));
+          const _chrg = Math.random() > 0.35;   // 65% desktop sedang charging
+          const _mockBatt = {
+            level:              _lvl,
+            charging:           _chrg,
+            chargingTime:       _chrg ? Math.floor(Math.random() * 3600)           : Infinity,
+            dischargingTime:    _chrg ? Infinity : Math.floor(Math.random() * 14400 + 3600),
+            onchargingchange:       null,
+            onchargingtimechange:   null,
+            ondischargingtimechange:null,
+            onlevelchange:          null,
+            addEventListener:    () => {},
+            removeEventListener: () => {},
+            dispatchEvent:       () => true,
+          };
+          if (navigator.getBattery) {
+            navigator.getBattery = makeNative(function() {
+              return Promise.resolve(_mockBatt);
+            }, 'getBattery');
+          }
+        } catch(e) {}
+
         // --- navigator.connection (Network Information API) ---
         // Desktop wifi = sinyal premium untuk ad network (CPM lebih tinggi dari 4g mobile).
         // Beberapa fingerprinter cek apakah connection.type konsisten dengan UA device.
